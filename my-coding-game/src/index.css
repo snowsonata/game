@@ -1,0 +1,147 @@
+/* =======================
+   全局基础重置
+======================= */
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  user-select: none; /* 防止长按选中文字 */
+  touch-action: none; /* 防止浏览器手势干扰游戏 */
+  color: #fff;
+}
+
+/* =======================
+   App 页面结构
+======================= */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 页面通用容器 */
+.page {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  background: #000;
+  color: #fff;
+}
+
+/* 游戏页面（Canvas 全屏） */
+.page.full {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* =======================
+   Canvas（游戏画布）
+======================= */
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+}
+
+/* =======================
+   底部导航栏 TabBar
+======================= */
+
+.tabbar {
+  height: 56px;
+  display: flex;
+  background: #111;
+  border-top: 1px solid #333;
+}
+
+.tabbar a {
+  flex: 1;
+  text-align: center;
+  line-height: 56px;
+  text-decoration: none;
+  color: #aaa;
+  font-size: 14px;
+}
+
+.tabbar a.active {
+  color: #4af;
+}
+
+/* =======================
+   按钮（统一手游风格）
+======================= */
+
+button {
+  width: 100%;
+  padding: 12px;
+  margin: 8px 0;
+  font-size: 16px;
+  border-radius: 8px;
+  border: none;
+  background: #1a1a1a;
+  color: #fff;
+}
+
+button:active {
+  transform: scale(0.96);
+}
+
+button:disabled {
+  opacity: 0.4;
+}
+
+/* =======================
+   升级 / 技能弹窗相关
+======================= */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.25s ease-out;
+  z-index: 10;
+}
+
+.skill-card {
+  background: #1a1a1a;
+  border-radius: 10px;
+  padding: 12px;
+  margin: 8px 0;
+  border: 1px solid #333;
+  transition: transform 0.2s, border-color 0.2s;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
+.skill-card:active {
+  transform: scale(0.95);
+  border-color: #4af;
+}
+
+/* =======================
+   动画
+======================= */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.05);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
