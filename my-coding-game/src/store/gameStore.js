@@ -1,11 +1,21 @@
 import { create } from 'zustand'
 import { getRandomSkills } from '../game/skill/skillSystem'
+import { SKILL_POOL } from '../game/skill/skillPool'
 
 /* ================= 经验曲线 ================= */
 
-// 你以后想换“波动式”“阶段式”，只改这里
+// 你以后想换"波动式""阶段式"，只改这里
 function calcExpMax(level) {
   return Math.floor(10 + level * level * 1.5)
+}
+
+/* ================= 技能基础 CD 查表 ================= */
+
+// 从 SKILL_POOL 中读取每个技能大类的基础 CD
+function getBaseCD(category) {
+  const data = SKILL_POOL[category]
+  if (!data || data.base == null) return 0
+  return data.base.cd ?? 0
 }
 
 export const useGameStore = create((set, get) => ({
@@ -32,6 +42,10 @@ export const useGameStore = create((set, get) => ({
   skillLevels: {},
   skillEffects: [],
   levelUpChoices: [],
+
+  /* ================= 技能冷却（供 UI 读取） ================= */
+  // 格式：{ [category]: { cd: number, maxCd: number } }
+  skillCooldowns: {},
 
   /* ================== 经验获取 ================== */
 
@@ -72,18 +86,69 @@ export const useGameStore = create((set, get) => ({
   /* ================== 选择技能 ================== */
 
   pickSkill(skill) {
-    set(state => ({
-      skillLevels: {
-        ...state.skillLevels,
-        [skill.category]:
-          (state.skillLevels[skill.category] || 0) + 1
-      },
+    set(state => {
+      const category = skill.category
+      const newLevel = (state.skillLevels[category] || 0) + 1
+      const maxCd = getBaseCD(category)
 
-      skillEffects: [...state.skillEffects, skill],
+      return {
+        skillLevels: {
+          ...state.skillLevels,
+          [category]: newLevel
+        },
 
-      isLevelUp: false,
-      pauseGame: false,
-      levelUpChoices: []
-    }))
+        skillEffects: [...state.skillEffects, skill],
+
+        // 初始化该技能冷却（刚获得时 cd = 0，即可立即使用）
+        skillCooldowns: {
+          ...state.skillCooldowns,
+          [category]: {
+            cd: 0,
+            maxCd
+          }
+        },
+
+        isLevelUp: false,
+        pauseGame: false,
+        levelUpChoices: []
+      }
+    })
+  },
+
+  /* ================== 更新技能冷却（由游戏主循环每帧调用） ================== */
+
+  tickSkillCooldowns(dt) {
+    const { skillCooldowns } = get()
+    const updated = {}
+    let changed = false
+
+    for (const [cat, state] of Object.entries(skillCooldowns)) {
+      if (state.cd > 0) {
+        const newCd = Math.max(0, state.cd - dt)
+        updated[cat] = { ...state, cd: newCd }
+        changed = true
+      } else {
+        updated[cat] = state
+      }
+    }
+
+    if (changed) {
+      set({ skillCooldowns: updated })
+    }
+  },
+
+  /* ================== 触发技能冷却（技能释放时调用） ================== */
+
+  triggerSkillCooldown(category) {
+    const { skillCooldowns } = get()
+    const state = skillCooldowns[category]
+    if (!state) return
+
+    set({
+      skillCooldowns: {
+        ...skillCooldowns,
+        [category]: { ...state, cd: state.maxCd }
+      }
+    })
   }
 }))

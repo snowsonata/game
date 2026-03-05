@@ -63,6 +63,7 @@ canvas {
   display: flex;
   background: #111;
   border-top: 1px solid #333;
+  flex-shrink: 0;
 }
 
 .tabbar a {

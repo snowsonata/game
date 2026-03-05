@@ -36,6 +36,7 @@ export default function GameCanvas() {
 
   const pauseGame = useGameStore(state => state.pauseGame)
   const gainExp = useGameStore(state => state.gainExp)
+  const tickSkillCooldowns = useGameStore(state => state.tickSkillCooldowns)
 
   /* ================= 初始化关卡 ================= */
 
@@ -60,6 +61,8 @@ export default function GameCanvas() {
 
       if (!pauseGame) {
         update(dt)
+        // 每帧推进技能冷却计时（供 SkillHUD 读取）
+        tickSkillCooldowns(dt)
       }
 
       render(ctx)
@@ -135,7 +138,7 @@ export default function GameCanvas() {
         const dist = Math.hypot(dx, dy)
 
         if (dist < b.size + e.size * e.scale) {
-          handleBulletHit(b, e,store)
+          handleBulletHit(b, e, store)
 
           if (e.hp <= 0) {
             e.alive = false
@@ -205,9 +208,20 @@ export default function GameCanvas() {
       )
     })
 
-    /* UI */
+    /* UI：HP + 经验条 */
+    const { exp, expMax, level } = useGameStore.getState()
+
+    ctx.font = '14px Arial'
     ctx.fillStyle = '#fff'
     ctx.fillText(`HP: ${hpRef.current}`, 10, 20)
+    ctx.fillText(`Lv.${level}`, 10, 38)
+
+    // 经验条背景
+    ctx.fillStyle = '#333'
+    ctx.fillRect(10, 44, 120, 6)
+    // 经验条填充
+    ctx.fillStyle = '#4af'
+    ctx.fillRect(10, 44, 120 * Math.min(1, exp / expMax), 6)
   }
 
   /* ================= 触控 / 鼠标 ================= */

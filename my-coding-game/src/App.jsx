@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import Home from './pages/Home'
 import Game from './pages/Game'
 import Skills from './pages/Skills'
@@ -7,6 +7,9 @@ import Codex from './pages/Codex'
 import TabBar from './ui/TabBar'
 
 export default function App() {
+  const location = useLocation()
+  const isGamePage = location.pathname === '/game'
+
   return (
     <div className="app">
       <Routes>
@@ -17,7 +20,7 @@ export default function App() {
         <Route path="/codex" element={<Codex />} />
       </Routes>
 
-      <TabBar />
+      {!isGamePage && <TabBar />}
     </div>
   )
 }
