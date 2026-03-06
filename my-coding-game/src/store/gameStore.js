@@ -139,15 +139,20 @@ export const useGameStore = create((set, get) => ({
 
   /* ================== 触发技能冷却（技能释放时调用） ================== */
 
-  triggerSkillCooldown(category) {
+  /* ================== 手动暂停/恢复 ================== */
+  setPause(value) {
+    set({ pauseGame: value })
+  },
+
+  triggerSkillCooldown(category, actualCd) {
     const { skillCooldowns } = get()
     const state = skillCooldowns[category]
-    if (!state) return
-
+    // 若传入了实际 CD 则更新 maxCd，否则使用已存的 maxCd
+    const maxCd = actualCd ?? state?.maxCd ?? 0
     set({
       skillCooldowns: {
         ...skillCooldowns,
-        [category]: { ...state, cd: state.maxCd }
+        [category]: { cd: maxCd, maxCd }
       }
     })
   }

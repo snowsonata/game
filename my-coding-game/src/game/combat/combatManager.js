@@ -82,6 +82,11 @@ export class CombatManager {
     const skill = this.skillManager.triggerSkill(skillId)
     if (!skill) return false
 
+    // 触发 CD 回调（同步到 gameStore.skillCooldowns，供 SkillHUD 读取）
+    if (typeof this.onSkillTriggered === 'function') {
+      this.onSkillTriggered(skillId)
+    }
+
     // 更新执行器上下文
     if (this.skillExecutor) {
       this.skillExecutor.ctx = {
@@ -147,9 +152,11 @@ export class CombatManager {
       bullets
     })
     
-    // 发射镜像弹幕
+    // 发射镜像弹幕（左右对称分布，平均间距 35px）
     for (let i = 0; i < mirrorCount; i++) {
-      const offsetX = (i + 1) * 40 * (i % 2 === 0 ? 1 : -1)
+      const side = i % 2 === 0 ? 1 : -1
+      const dist = Math.ceil((i + 1) / 2) * 35
+      const offsetX = side * dist
       this.createBasicBullet({
         x: player.x + offsetX,
         y: player.y,

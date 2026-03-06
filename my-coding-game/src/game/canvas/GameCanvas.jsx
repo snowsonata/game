@@ -8,92 +8,103 @@ import { CombatManager } from '../combat/combatManager'
 const VIEW_W = 360
 const VIEW_H = 640
 
-// 世界宽度：视口 + 左右各 0.3 倍拓展 = 360 * 1.6 = 576
-// 左右各拓展 108px
+// 世界宽度：视口 + 左右各 0.3 倍拓展
 const EXTEND = Math.round(VIEW_W * 0.3)   // 108
 const WORLD_W = VIEW_W + EXTEND * 2       // 576
 
 const DEFENSE_LINE = 520
 
-// 2.5D 参数：适当倾斜，非汇聚于一点
+// 2.5D 参数
 const PERSPECTIVE_STRENGTH = 0.30
 
 /* ================================================================
+ * skillPool.category → skillDefinitions skillId 映射
+ * 用于首次获得某大类时注册主技能
+ * ================================================================ */
+const CATEGORY_TO_SKILL_ID = {
+  '笔记本电脑': 'laptop',
+  '外卖':       'takeout',
+  '摸鱼宝典':   'fish_swap',
+  '电动车':     'electric_car',
+  'AI工具':     'ai_tool',
+  '期末周模式': 'exam_mode',
+  '君子六艺':   'six_arts',
+}
+
+/* ================================================================
  * skillPool.id → skillDefinitions upgradeId 完整映射表
- * 格式：{ [skillPoolId]: { skillId, upgradeId } }
- * upgradeId 为 null 表示只注册主技能，不添加强化（首次获得技能本体）
  * ================================================================ */
 const SKILL_POOL_MAP = {
   // ---- 笔记本电脑 ----
-  '磁盘清理':     { skillId: 'laptop',       upgradeId: 'laptop_disk_cleanup' },
-  '校园网':       { skillId: 'laptop',       upgradeId: 'laptop_campus_network' },
-  '快捷键':       { skillId: 'laptop',       upgradeId: 'laptop_hotkey' },
-  '固态硬盘':     { skillId: 'laptop',       upgradeId: 'laptop_solid_state' },
-  '机械键盘':     { skillId: 'laptop',       upgradeId: 'laptop_keyboard' },
-  '更新驱动':     { skillId: 'laptop',       upgradeId: 'laptop_driver' },
-  '豪华显示器':   { skillId: 'laptop',       upgradeId: 'laptop_luxury_display' },
-  '低耗模式':     { skillId: 'laptop',       upgradeId: 'laptop_low_power' },
-  '"科学上网"':   { skillId: 'laptop',       upgradeId: 'laptop_vpn' },
+  '磁盘清理':   { upgradeId: 'laptop_disk_cleanup' },
+  '校园网':     { upgradeId: 'laptop_campus_network' },
+  '快捷键':     { upgradeId: 'laptop_hotkey' },
+  '固态硬盘':   { upgradeId: 'laptop_solid_state' },
+  '机械键盘':   { upgradeId: 'laptop_keyboard' },
+  '更新驱动':   { upgradeId: 'laptop_driver' },
+  '豪华显示器': { upgradeId: 'laptop_luxury_display' },
+  '低耗模式':   { upgradeId: 'laptop_low_power' },
+  '科学上网':   { upgradeId: 'laptop_vpn' },
+  '"科学上网"': { upgradeId: 'laptop_vpn' },
 
   // ---- 外卖 ----
-  '满减券':       { skillId: 'takeout',      upgradeId: 'takeout_discount' },
-  '急送':         { skillId: 'takeout',      upgradeId: 'takeout_rush' },
-  '黑色液体勺':   { skillId: 'takeout',      upgradeId: 'takeout_black_liquid' },
-  '精准起送':     { skillId: 'takeout',      upgradeId: 'takeout_precise_delivery' },
-  '下饭剧':       { skillId: 'takeout',      upgradeId: 'takeout_drama' },
-  '外卖柜监控':   { skillId: 'takeout',      upgradeId: 'takeout_locker' },
-  '轻量化饮食':   { skillId: 'takeout',      upgradeId: 'takeout_light_diet' },
-  '"搞劳"':       { skillId: 'takeout',      upgradeId: 'takeout_overtime' },
-  '犒劳':         { skillId: 'takeout',      upgradeId: 'takeout_overtime' },
-  '免配送费':     { skillId: 'takeout',      upgradeId: 'takeout_free_delivery' },
+  '满减券':     { upgradeId: 'takeout_discount' },
+  '急送':       { upgradeId: 'takeout_rush' },
+  '黑色液体勺': { upgradeId: 'takeout_black_liquid' },
+  '精准起送':   { upgradeId: 'takeout_precise_delivery' },
+  '下饭剧':     { upgradeId: 'takeout_drama' },
+  '外卖柜监控': { upgradeId: 'takeout_locker' },
+  '轻量化饮食': { upgradeId: 'takeout_light_diet' },
+  '犒劳':       { upgradeId: 'takeout_overtime' },
+  '"搞劳"':     { upgradeId: 'takeout_overtime' },
+  '免配送费':   { upgradeId: 'takeout_free_delivery' },
 
-  // ---- 摸鱼宝典（初版 skillPool 中叫"换鱼宝典"，skillDefinitions 中 id 为 fish_swap） ----
-  '摸鱼计时':     { skillId: 'fish_swap',    upgradeId: 'fish_timer' },
-  '喝水':         { skillId: 'fish_swap',    upgradeId: 'fish_drink' },
-  '快速切屏':     { skillId: 'fish_swap',    upgradeId: 'fish_quick_switch' },
-  'ddl':          { skillId: 'fish_swap',    upgradeId: 'fish_ddl' },
-  '假装工作':     { skillId: 'fish_swap',    upgradeId: 'fish_pretend_work' },
-  '摸鱼雷达':     { skillId: 'fish_swap',    upgradeId: 'fish_radar' },
-  '跑路枪头':     { skillId: 'fish_swap',    upgradeId: 'fish_escape' },
-  '厕所遁走':     { skillId: 'fish_swap',    upgradeId: 'fish_walk_through' },
-  '消息免打扰':   { skillId: 'fish_swap',    upgradeId: 'fish_dnd' },
+  // ---- 摸鱼宝典 ----
+  '摸鱼计时':   { upgradeId: 'fish_timer' },
+  '喝水':       { upgradeId: 'fish_drink' },
+  '快速切屏':   { upgradeId: 'fish_quick_switch' },
+  'ddl':        { upgradeId: 'fish_ddl' },
+  '假装工作':   { upgradeId: 'fish_pretend_work' },
+  '摸鱼雷达':   { upgradeId: 'fish_radar' },
+  '跑路枪头':   { upgradeId: 'fish_escape' },
+  '厕所遁走':   { upgradeId: 'fish_walk_through' },
+  '消息免打扰': { upgradeId: 'fish_dnd' },
 
-  // ---- 电动车（skillDefinitions id 为 electric_car） ----
-  '头盔':         { skillId: 'electric_car', upgradeId: 'car_helmet' },
-  '充电器':       { skillId: 'electric_car', upgradeId: 'car_charger' },
-  '充电桩':       { skillId: 'electric_car', upgradeId: 'car_charging_station' },
-  '神奇车牌':     { skillId: 'electric_car', upgradeId: 'car_magic_plate' },
-  '武汉交通':     { skillId: 'electric_car', upgradeId: 'car_wuhan_traffic' },
-  '识别码':       { skillId: 'electric_car', upgradeId: 'car_id_code' },
+  // ---- 电动车 ----
+  '头盔':       { upgradeId: 'car_helmet' },
+  '充电器':     { upgradeId: 'car_charger' },
+  '充电桩':     { upgradeId: 'car_charging_station' },
+  '神奇车牌':   { upgradeId: 'car_magic_plate' },
+  '武汉交通':   { upgradeId: 'car_wuhan_traffic' },
+  '识别码':     { upgradeId: 'car_id_code' },
 
   // ---- AI工具 ----
-  '"共创"':       { skillId: 'ai_tool',      upgradeId: 'ai_co_create' },
-  '共创':         { skillId: 'ai_tool',      upgradeId: 'ai_co_create' },
-  '免费额度':     { skillId: 'ai_tool',      upgradeId: 'ai_free_quota' },
-  '云端同步':     { skillId: 'ai_tool',      upgradeId: 'ai_cloud_sync' },
-  '提示词优化':   { skillId: 'ai_tool',      upgradeId: 'ai_prompt_optimize' },
-  '一键润色':     { skillId: 'ai_tool',      upgradeId: 'ai_polish' },
-  '深度思考':     { skillId: 'ai_tool',      upgradeId: 'ai_deep_think' },
+  '共创':       { upgradeId: 'ai_co_create' },
+  '"共创"':     { upgradeId: 'ai_co_create' },
+  '免费额度':   { upgradeId: 'ai_free_quota' },
+  '云端同步':   { upgradeId: 'ai_cloud_sync' },
+  '提示词优化': { upgradeId: 'ai_prompt_optimize' },
+  '一键润色':   { upgradeId: 'ai_polish' },
+  '深度思考':   { upgradeId: 'ai_deep_think' },
 
-  // ---- 期末周模式（skillDefinitions id 为 exam_mode） ----
-  '网课':         { skillId: 'exam_mode',    upgradeId: 'exam_online_course' },
-  '热带冰红茶':   { skillId: 'exam_mode',    upgradeId: 'exam_ice_tea' },
-  'PPT':          { skillId: 'exam_mode',    upgradeId: 'exam_ppt' },
-  '小抄':         { skillId: 'exam_mode',    upgradeId: 'exam_cheat_sheet' },
-  '求捞':         { skillId: 'exam_mode',    upgradeId: 'exam_beg' },
-  '历年真题':     { skillId: 'exam_mode',    upgradeId: 'exam_past_papers' },
+  // ---- 期末周模式 ----
+  '网课':       { upgradeId: 'exam_online_course' },
+  '热带冰红茶': { upgradeId: 'exam_ice_tea' },
+  'PPT':        { upgradeId: 'exam_ppt' },
+  '小抄':       { upgradeId: 'exam_cheat_sheet' },
+  '求捞':       { upgradeId: 'exam_beg' },
+  '历年真题':   { upgradeId: 'exam_past_papers' },
 
   // ---- 君子六艺 ----
-  '急':           { skillId: 'six_arts',     upgradeId: 'arts_taboo' },
-  '蚌':           { skillId: 'six_arts',     upgradeId: 'arts_clam' },
-  '典':           { skillId: 'six_arts',     upgradeId: 'arts_classic' },
-  '麻':           { skillId: 'six_arts',     upgradeId: 'arts_mahjong' },
-  '孝':           { skillId: 'six_arts',     upgradeId: 'arts_filial' },
-  '乐':           { skillId: 'six_arts',     upgradeId: 'arts_music' },
+  '急':         { upgradeId: 'arts_taboo' },
+  '蚌':         { upgradeId: 'arts_clam' },
+  '典':         { upgradeId: 'arts_classic' },
+  '麻':         { upgradeId: 'arts_mahjong' },
+  '孝':         { upgradeId: 'arts_filial' },
+  '乐':         { upgradeId: 'arts_music' },
 }
 
 /* ================= 升级弹窗 ================= */
-
 const TIER_COLOR = { bronze: '#cd7f32', silver: '#bdc3c7', gold: '#f1c40f' }
 const TIER_LABEL = { bronze: '铜', silver: '银', gold: '金' }
 
@@ -102,7 +113,7 @@ function LevelUpModal({ choices, onPick }) {
   return (
     <div style={{
       position: 'absolute', inset: 0,
-      background: 'rgba(0,0,0,0.85)',
+      background: 'rgba(0,0,0,0.88)',
       display: 'flex', flexDirection: 'column',
       alignItems: 'center', justifyContent: 'center',
       zIndex: 50, gap: 14, padding: 20
@@ -157,27 +168,25 @@ function describeSkill(skill) {
   if (skill.converge)       parts.push('弹幕向中心收束')
   return parts.length > 0 ? parts.join(' / ') : '特殊效果'
 }
-
 function pct(v) { return `${(v * 100).toFixed(0)}%` }
 
 /* ================= 主组件 ================= */
-
 export default function GameCanvas({ joystickMoveRef }) {
   const canvasRef = useRef(null)
   const lastTimeRef = useRef(0)
+  const rafRef = useRef(null)
   const waveControllerRef = useRef(null)
   const combatManagerRef = useRef(null)
 
-  // 玩家在世界坐标中（x 范围 0~WORLD_W）
+  // 用 ref 追踪 pauseGame，避免 useEffect 闭包陈旧问题
+  const pauseRef = useRef(false)
+
   const playerRef = useRef({
     x: WORLD_W / 2,
     y: DEFENSE_LINE + 20,
     size: 16
   })
-
-  // 摄像机 X（世界坐标左边缘），初始居中
-  const cameraXRef = useRef(EXTEND)   // EXTEND = 108，使玩家初始在视口中心
-
+  const cameraXRef = useRef(EXTEND)
   const bulletsRef = useRef([])
   const enemiesRef = useRef([])
   const hpRef = useRef(10)
@@ -185,58 +194,55 @@ export default function GameCanvas({ joystickMoveRef }) {
   /* ---- store 订阅 ---- */
   const pauseGame          = useGameStore(s => s.pauseGame)
   const gainExp            = useGameStore(s => s.gainExp)
-  const tickSkillCooldowns = useGameStore(s => s.tickSkillCooldowns)
   const isLevelUp          = useGameStore(s => s.isLevelUp)
   const levelUpChoices     = useGameStore(s => s.levelUpChoices)
   const pickSkill          = useGameStore(s => s.pickSkill)
+  const triggerSkillCooldown = useGameStore(s => s.triggerSkillCooldown)
+  const tickSkillCooldowns   = useGameStore(s => s.tickSkillCooldowns)
+
+  // 同步 pauseRef
+  useEffect(() => { pauseRef.current = pauseGame }, [pauseGame])
 
   /* ---- 本地 state：升级弹窗 ---- */
   const [showModal, setShowModal] = useState(false)
-
-  /* ---- 监听 isLevelUp → 弹窗 ---- */
   useEffect(() => {
     if (isLevelUp) setShowModal(true)
   }, [isLevelUp])
 
   /* ---- 选技能处理 ---- */
   function handlePickSkill(skill) {
-    // 1. 更新 store（skillLevels / skillEffects / 恢复 pauseGame）
     pickSkill(skill)
-    // 2. 通过映射表将 skillPool 选项注册到 CombatManager
     registerSkillToCombatManager(skill)
     setShowModal(false)
   }
 
   /* ================================================================
-   * 核心修复：将 skillPool 选项转换为 CombatManager 可识别的技能注册
-   *
-   * 流程：
-   *   1. 通过 SKILL_POOL_MAP 找到 skillId 和 upgradeId
-   *   2. 调用 cm.addSkill(skillId)：若技能不存在则注册，已存在则升级等级
-   *   3. 调用 cm.addUpgrade(skillId, upgradeId)：应用强化效果到 skill.effect
-   *   4. CombatManager.autoTriggerSkills 会在每帧自动触发冷却完毕的技能
+   * 将 skillPool 选项注册到 CombatManager
+   * 1. 通过 category 映射到 skillId，调用 addSkill（首次注册主技能）
+   * 2. 通过 skill.id 映射到 upgradeId，调用 addUpgrade（应用强化）
    * ================================================================ */
   function registerSkillToCombatManager(poolSkill) {
     const cm = combatManagerRef.current
     if (!cm) return
 
-    const mapping = SKILL_POOL_MAP[poolSkill.id]
-    if (!mapping) {
-      console.warn(`[SkillMap] 未找到映射: "${poolSkill.id}"，请检查 SKILL_POOL_MAP`)
+    const skillId = CATEGORY_TO_SKILL_ID[poolSkill.category]
+    if (!skillId) {
+      console.warn(`[SkillMap] 未找到大类映射: "${poolSkill.category}"`)
       return
     }
-
-    const { skillId, upgradeId } = mapping
 
     // 注册主技能（首次注册 or 升级等级）
     cm.addSkill(skillId)
 
-    // 应用强化效果
-    if (upgradeId) {
-      const ok = cm.addUpgrade(skillId, upgradeId)
+    // 应用强化
+    const mapping = SKILL_POOL_MAP[poolSkill.id]
+    if (mapping?.upgradeId) {
+      const ok = cm.addUpgrade(skillId, mapping.upgradeId)
       if (!ok) {
-        console.warn(`[SkillMap] 强化未找到: skillId="${skillId}" upgradeId="${upgradeId}"`)
+        console.warn(`[SkillMap] 强化未找到: skillId="${skillId}" upgradeId="${mapping.upgradeId}"`)
       }
+    } else {
+      console.warn(`[SkillMap] 未找到强化映射: "${poolSkill.id}"`)
     }
   }
 
@@ -246,6 +252,18 @@ export default function GameCanvas({ joystickMoveRef }) {
     waveControllerRef.current = createWaveController(stage, enemiesRef.current)
 
     const cm = new CombatManager()
+
+    // 注入 CD 回调：CombatManager 触发技能时同步更新 store 的 skillCooldowns
+    // 这样 SkillHUD 才能读到正确的冷却时间
+    cm.onSkillTriggered = (skillId) => {
+      const category = Object.entries(CATEGORY_TO_SKILL_ID)
+        .find(([, sid]) => sid === skillId)?.[0]
+      if (!category) return
+      // 从 CombatManager 读取实际 CD（包含强化后的 CD 修正）
+      const actualCd = cm.skillManager.getSkillMaxCooldown(skillId)
+      triggerSkillCooldown(category, actualCd)
+    }
+
     cm.initialize({
       player: playerRef.current,
       bullets: bulletsRef.current,
@@ -254,12 +272,15 @@ export default function GameCanvas({ joystickMoveRef }) {
     combatManagerRef.current = cm
 
     // 热重载：重新应用已有技能
-    useGameStore.getState().skillEffects.forEach(skill => registerSkillToCombatManager(skill))
+    useGameStore.getState().skillEffects.forEach(s => registerSkillToCombatManager(s))
 
-    return () => cm.cleanup()
+    return () => {
+      cm.cleanup()
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+    }
   }, [])
 
-  /* ---- 主循环 ---- */
+  /* ---- 主循环（只注册一次，通过 pauseRef 控制暂停） ---- */
   useEffect(() => {
     const canvas = canvasRef.current
     const ctx = canvas.getContext('2d')
@@ -269,18 +290,18 @@ export default function GameCanvas({ joystickMoveRef }) {
       dt = Math.min(dt, 0.033)
       lastTimeRef.current = time
 
-      // pauseGame=true 时冻结逻辑（升级弹窗期间）
-      if (!pauseGame) {
+      if (!pauseRef.current) {
         update(dt)
         tickSkillCooldowns(dt)
       }
 
       render(ctx)
-      requestAnimationFrame(loop)
+      rafRef.current = requestAnimationFrame(loop)
     }
 
-    requestAnimationFrame(loop)
-  }, [pauseGame])
+    rafRef.current = requestAnimationFrame(loop)
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+  }, [])  // 只挂载一次，不依赖 pauseGame
 
   /* ---- 更新逻辑 ---- */
   function update(dt) {
@@ -291,7 +312,6 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     waveControllerRef.current?.update(dt)
 
-    // CombatManager.update：自动触发技能、自动射击、更新 Buff/CD
     if (cm) cm.update(dt, { player, bullets, enemies })
 
     /* 子弹移动 */
@@ -311,19 +331,11 @@ export default function GameCanvas({ joystickMoveRef }) {
     const slowMod = cm ? cm.getEnemySpeedModifier() : 1
     enemies.forEach(e => {
       e.y += e.speed * dt * slowMod
-
-      // 缩放：顶部 0.3x → 底部 1.0x
       const t = Math.max(0, Math.min(1, e.y / DEFENSE_LINE))
       e.scale = 0.3 + t * 0.7
-
-      // X 轴透视：远端向世界中心适当收束
       const worldCenterX = WORLD_W / 2
       e.x = e.spawnX + (worldCenterX - e.spawnX) * PERSPECTIVE_STRENGTH * (1 - t)
-
-      if (e.y >= DEFENSE_LINE) {
-        hpRef.current -= 1
-        e.alive = false
-      }
+      if (e.y >= DEFENSE_LINE) { hpRef.current -= 1; e.alive = false }
     })
 
     /* 碰撞检测 */
@@ -341,7 +353,7 @@ export default function GameCanvas({ joystickMoveRef }) {
     cleanArray(bullets)
     cleanArray(enemies)
 
-    /* 摄像机平滑跟随玩家 */
+    /* 摄像机跟随 */
     const targetCamX = player.x - VIEW_W / 2
     const clampedCamX = Math.max(0, Math.min(WORLD_W - VIEW_W, targetCamX))
     cameraXRef.current += (clampedCamX - cameraXRef.current) * 0.12
@@ -356,19 +368,17 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     ctx.clearRect(0, 0, VIEW_W, VIEW_H)
 
-    /* 背景渐变 */
     const bg = ctx.createLinearGradient(0, 0, 0, VIEW_H)
     bg.addColorStop(0, '#0a0a1a')
     bg.addColorStop(1, '#111122')
     ctx.fillStyle = bg
     ctx.fillRect(0, 0, VIEW_W, VIEW_H)
 
-    /* 透视地面线（随摄像机偏移） */
+    /* 透视地面线 */
     ctx.strokeStyle = '#1e1e30'
     ctx.lineWidth = 1
-    const lineCount = 10
-    for (let i = 0; i <= lineCount; i++) {
-      const bottomX = (i / lineCount) * WORLD_W - camX
+    for (let i = 0; i <= 10; i++) {
+      const bottomX = (i / 10) * WORLD_W - camX
       const topX = VIEW_W / 2 + (bottomX - VIEW_W / 2) * (1 - PERSPECTIVE_STRENGTH)
       ctx.beginPath()
       ctx.moveTo(topX, 0)
@@ -384,7 +394,7 @@ export default function GameCanvas({ joystickMoveRef }) {
     ctx.lineTo(VIEW_W, DEFENSE_LINE)
     ctx.stroke()
 
-    /* 敌人（按 y 排序，近的后画） */
+    /* 敌人（按 y 排序） */
     const sortedEnemies = [...enemies].sort((a, b) => a.y - b.y)
     sortedEnemies.forEach(e => renderEnemy(ctx, e, camX))
 
@@ -403,11 +413,9 @@ export default function GameCanvas({ joystickMoveRef }) {
     renderHUD(ctx)
   }
 
-  /* ---- 渲染敌人 ---- */
   function renderEnemy(ctx, e, camX) {
     const sx = e.x - camX
     const size = e.size * e.scale
-
     ctx.save()
     ctx.globalAlpha = 0.3 * e.scale
     ctx.fillStyle = '#000'
@@ -415,15 +423,12 @@ export default function GameCanvas({ joystickMoveRef }) {
     ctx.ellipse(sx, e.y + size * 0.5, size * 0.6, size * 0.15, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
-
     const r = Math.floor(160 + 95 * e.scale)
     const g = Math.floor(20 * e.scale)
     ctx.fillStyle = `rgb(${r},${g},${g})`
     ctx.fillRect(sx - size / 2, e.y - size / 2, size, size)
-
     ctx.fillStyle = `rgba(255,255,255,${0.12 * e.scale})`
     ctx.fillRect(sx - size / 2 + 1, e.y - size / 2 + 1, size * 0.35, size * 0.3)
-
     if (e.maxHp > 0) {
       const barW = size, barH = Math.max(2, size * 0.1)
       const barY = e.y - size / 2 - barH - 2
@@ -434,11 +439,9 @@ export default function GameCanvas({ joystickMoveRef }) {
     }
   }
 
-  /* ---- 渲染玩家 ---- */
   function renderPlayer(ctx, player, camX) {
     const sx = player.x - camX
     const size = 30
-
     ctx.save()
     ctx.globalAlpha = 0.4
     ctx.fillStyle = '#000'
@@ -446,15 +449,12 @@ export default function GameCanvas({ joystickMoveRef }) {
     ctx.ellipse(sx, player.y + size * 0.45, size * 0.6, size * 0.18, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
-
     ctx.fillStyle = '#4af'
     ctx.fillRect(sx - size / 2, player.y - size / 2, size, size)
-
     ctx.fillStyle = 'rgba(255,255,255,0.18)'
     ctx.fillRect(sx - size / 2 + 2, player.y - size / 2 + 2, size * 0.4, size * 0.35)
   }
 
-  /* ---- 渲染 HUD ---- */
   function renderHUD(ctx) {
     const { exp, expMax, level } = useGameStore.getState()
     ctx.font = 'bold 14px Arial'
@@ -470,7 +470,7 @@ export default function GameCanvas({ joystickMoveRef }) {
     ctx.strokeRect(10, 46, 130, 7)
   }
 
-  /* ---- 操控：摇杆回调 + PC 鼠标 ---- */
+  /* ---- 操控 ---- */
   useEffect(() => {
     const canvas = canvasRef.current
     const player = playerRef.current
@@ -479,7 +479,6 @@ export default function GameCanvas({ joystickMoveRef }) {
       joystickMoveRef.current = (screenDx) => {
         const rect = canvas.getBoundingClientRect()
         const scaleX = VIEW_W / rect.width
-        // 速度系数：上次 0.20，再降为 0.20 × 0.2 = 0.04
         const worldDx = screenDx * scaleX * 0.04
         player.x = Math.max(20, Math.min(WORLD_W - 20, player.x + worldDx))
       }
@@ -514,7 +513,6 @@ export default function GameCanvas({ joystickMoveRef }) {
   )
 }
 
-/* ================= 工具 ================= */
 function cleanArray(arr) {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (!arr[i].alive) arr.splice(i, 1)
