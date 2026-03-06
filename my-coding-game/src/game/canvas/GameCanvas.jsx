@@ -5,15 +5,19 @@ import { createWaveController } from '../wave/waveController'
 import { CombatManager } from '../combat/combatManager'
 import { BuffType } from '../buff/buffSystem'
 
-const WIDTH = 360
-const HEIGHT = 640
+// Canvas 视口尺寸（固定）
+const VIEW_W = 360
+const VIEW_H = 640
+
+// 世界宽度（比视口宽，允许摄像机左右滚动）
+const WORLD_W = 900
 const DEFENSE_LINE = 520
 
-// 2.5D 透视消失点（水平居中，屏幕顶部附近）
-const VP_X = WIDTH / 2   // 消失点 X
-const VP_Y = 0           // 消失点 Y（顶部）
+// 2.5D 参数：适当倾斜，非汇聚于一点
+// 远端（y=0）X 向中心偏移的比例（0=不偏移，1=完全汇聚）
+const PERSPECTIVE_STRENGTH = 0.30   // 30% 收束，产生轻微透视感
 
-/* ================= 升级选技能弹窗 ================= */
+/* ================= 升级弹窗 ================= */
 
 const TIER_COLOR = { bronze: '#cd7f32', silver: '#bdc3c7', gold: '#f1c40f' }
 const TIER_LABEL = { bronze: '铜', silver: '银', gold: '金' }
@@ -59,26 +63,23 @@ function LevelUpModal({ choices, onPick }) {
   )
 }
 
-/* 根据 skillPool 字段生成描述（兜底） */
 function describeSkill(skill) {
   const parts = []
-  if (skill.dmgUp)            parts.push(`伤害 +${pct(skill.dmgUp)}`)
-  if (skill.dmgDown)          parts.push(`伤害 -${pct(skill.dmgDown)}`)
-  if (skill.critRate)         parts.push(`暴击率 +${pct(skill.critRate)}`)
-  if (skill.critDmg)          parts.push(`爆伤 +${pct(skill.critDmg)}`)
-  if (skill.cdReduce)         parts.push(`CD -${pct(skill.cdReduce)}`)
-  if (skill.cdUp)             parts.push(`CD +${pct(skill.cdUp)}`)
-  if (skill.pierce)           parts.push(`穿透 +${skill.pierce}`)
-  if (skill.atkSpeedUp)       parts.push(`攻速 +${pct(skill.atkSpeedUp)}`)
-  if (skill.fireRateUp)       parts.push(`射速 +${pct(skill.fireRateUp)}`)
-  if (skill.durationUp)       parts.push(`持续 +${pct(skill.durationUp)}`)
-  if (skill.mirror)           parts.push(`镜像 +${skill.mirror}`)
-  if (skill.enemySlow)        parts.push(`敌方减速 ${pct(skill.enemySlow)}`)
-  if (skill.permanent)        parts.push('永久生效')
-  if (skill.forceCrit)        parts.push('必定暴击')
-  if (skill.converge)         parts.push('弹幕向中心收束')
-  if (skill.rows)             parts.push(`弹幕排数 +${skill.rows - 1}`)
-  if (skill.shots)            parts.push(`释放 ${skill.shots} 次`)
+  if (skill.dmgUp)          parts.push(`伤害 +${pct(skill.dmgUp)}`)
+  if (skill.dmgDown)        parts.push(`伤害 -${pct(skill.dmgDown)}`)
+  if (skill.critRate)       parts.push(`暴击率 +${pct(skill.critRate)}`)
+  if (skill.critDmg)        parts.push(`爆伤 +${pct(skill.critDmg)}`)
+  if (skill.cdReduce)       parts.push(`CD -${pct(skill.cdReduce)}`)
+  if (skill.cdUp)           parts.push(`CD +${pct(skill.cdUp)}`)
+  if (skill.pierce)         parts.push(`穿透 +${skill.pierce}`)
+  if (skill.atkSpeedUp)     parts.push(`攻速 +${pct(skill.atkSpeedUp)}`)
+  if (skill.fireRateUp)     parts.push(`射速 +${pct(skill.fireRateUp)}`)
+  if (skill.durationUp)     parts.push(`持续 +${skill.durationUp}s`)
+  if (skill.mirror)         parts.push(`镜像 +${skill.mirror}`)
+  if (skill.enemySlow)      parts.push(`敌方减速 ${pct(skill.enemySlow)}`)
+  if (skill.permanent)      parts.push('永久生效')
+  if (skill.forceCrit)      parts.push('必定暴击')
+  if (skill.converge)       parts.push('弹幕向中心收束')
   return parts.length > 0 ? parts.join(' / ') : '特殊效果'
 }
 
@@ -92,8 +93,16 @@ export default function GameCanvas({ joystickMoveRef }) {
   const waveControllerRef = useRef(null)
   const combatManagerRef = useRef(null)
 
-  /* ---- 战斗态（不进 store） ---- */
-  const playerRef = useRef({ x: WIDTH / 2, y: DEFENSE_LINE + 20, size: 16 })
+  // 世界坐标中的玩家（x 范围 0~WORLD_W）
+  const playerRef = useRef({
+    x: WORLD_W / 2,
+    y: DEFENSE_LINE + 20,
+    size: 16
+  })
+
+  // 摄像机 X（世界坐标，左边缘）
+  const cameraXRef = useRef(WORLD_W / 2 - VIEW_W / 2)
+
   const bulletsRef = useRef([])
   const enemiesRef = useRef([])
   const hpRef = useRef(10)
@@ -109,117 +118,57 @@ export default function GameCanvas({ joystickMoveRef }) {
   /* ---- 本地 state：升级弹窗 ---- */
   const [showModal, setShowModal] = useState(false)
 
-  /* ---- 监听 isLevelUp ---- */
+  /* ---- 监听 isLevelUp → 暂停 + 弹窗 ---- */
   useEffect(() => {
-    if (isLevelUp) setShowModal(true)
+    if (isLevelUp) {
+      setShowModal(true)
+    }
   }, [isLevelUp])
 
-  /* ---- 选技能处理 ---- */
+  /* ---- 选技能 ---- */
   function handlePickSkill(skill) {
-    pickSkill(skill)
+    pickSkill(skill)              // store：更新 skillLevels / skillEffects / 恢复 pauseGame=false
     applySkillToCombatManager(skill)
     setShowModal(false)
   }
 
-  /* ================================================================
-   * 将 skillPool 中选出的技能对象应用到 CombatManager
-   *
-   * skillPool 中每个强化对象的字段（直接挂在对象上，非嵌套 effect）：
-   *   dmgUp / dmgDown / critRate / critDmg / cdReduce / cdUp
-   *   pierce / atkSpeedUp / fireRateUp / durationUp / durationDown
-   *   mirror / enemySlow / permanent / forceCrit / converge
-   *   rows / shots / secondCastDmg / outerRingDmg / centerDmgUp
-   *   pierceDmgUp / rangeUp / bulletCountUp / sizeUp / intervalReduce
-   *   moveSpeedUp / mirrorDmgBuff / mirrorDmgUp / mirrorDmgDown
-   *   affectOtherSkills / ignoreDamageReduce / disableOtherActive
-   *   activeSkillDmgBuff / intervalUp
-   * ================================================================ */
+  /* ---- 将 skillPool 技能效果写入 CombatManager ---- */
   function applySkillToCombatManager(skill) {
     const cm = combatManagerRef.current
     if (!cm) return
 
-    // --- 暴击率 ---
-    if (skill.critRate) {
-      cm.damageCalculator.addCritRate(skill.critRate)
-    }
+    if (skill.critRate)       cm.damageCalculator.addCritRate(skill.critRate)
+    if (skill.critDmg)        cm.damageCalculator.addCritDamage(skill.critDmg)
+    if (skill.dmgUp)          cm.damageCalculator.addDamageIncrease(skill.dmgUp)
+    if (skill.dmgDown)        cm.damageCalculator.addDamageIncrease(-skill.dmgDown)
+    if (skill.atkSpeedUp)     cm.baseFireRate = cm.baseFireRate / (1 + skill.atkSpeedUp)
+    if (skill.fireRateUp)     cm.baseFireRate = cm.baseFireRate / (1 + skill.fireRateUp)
+    if (skill.mirrorDmgBuff)  cm.damageCalculator.addDamageIncrease(skill.mirrorDmgBuff)
+    if (skill.mirrorDmgUp)    cm.damageCalculator.addDamageIncrease(skill.mirrorDmgUp)
 
-    // --- 暴击伤害 ---
-    if (skill.critDmg) {
-      cm.damageCalculator.addCritDamage(skill.critDmg)
-    }
-
-    // --- 伤害增加 ---
-    if (skill.dmgUp) {
-      cm.damageCalculator.addDamageIncrease(skill.dmgUp)
-    }
-
-    // --- 伤害降低（负数增加） ---
-    if (skill.dmgDown) {
-      cm.damageCalculator.addDamageIncrease(-skill.dmgDown)
-    }
-
-    // --- 攻速提升（缩短 baseFireRate） ---
-    if (skill.atkSpeedUp) {
-      cm.baseFireRate = cm.baseFireRate / (1 + skill.atkSpeedUp)
-    }
-    if (skill.fireRateUp) {
-      cm.baseFireRate = cm.baseFireRate / (1 + skill.fireRateUp)
-    }
-
-    // --- 永久镜像 ---
     if (skill.mirror && skill.permanent) {
-      cm.buffManager.addBuff({
-        type: BuffType.MIRROR,
-        value: skill.mirror,
-        duration: 99999,
-        source: 'permanent_mirror'
-      })
+      cm.buffManager.addBuff({ type: BuffType.MIRROR, value: skill.mirror, duration: 99999, source: 'perm_mirror' })
     }
-
-    // --- 永久敌方减速 ---
     if (skill.enemySlow && skill.permanent) {
-      cm.buffManager.addBuff({
-        type: BuffType.ENEMY_SLOW,
-        value: skill.enemySlow,
-        duration: 99999,
-        source: 'permanent_slow'
-      })
+      cm.buffManager.addBuff({ type: BuffType.ENEMY_SLOW, value: skill.enemySlow, duration: 99999, source: 'perm_slow' })
     }
-
-    // --- 永久必定暴击（如电动车识别码 + 期末周模式） ---
     if (skill.forceCrit && skill.permanent) {
       cm.damageCalculator.setGuaranteedCrit(true)
     }
 
-    // --- 技能 CD 减少（写入 CombatManager 的 skillManager） ---
+    // CD 减少
     if (skill.cdReduce && skill.category) {
-      const skillIdMap = {
-        '笔记本电脑': 'laptop',
-        '外卖': 'takeout',
-        '摸鱼宝典': 'fish',
-        '电动车': 'ebike',
-        'AI工具': 'ai_tool',
-        '期末周模式': 'exam_mode',
-        '君子六艺': 'six_arts'
+      const idMap = {
+        '笔记本电脑': 'laptop', '外卖': 'takeout', '摸鱼宝典': 'fish',
+        '电动车': 'ebike', 'AI工具': 'ai_tool', '期末周模式': 'exam_mode', '君子六艺': 'six_arts'
       }
-      const skillId = skillIdMap[skill.category]
-      if (skillId) {
-        const s = cm.skillManager.getSkill(skillId)
-        if (s) {
-          s.cdModifier = (s.cdModifier || 0) - skill.cdReduce
-        }
+      const sid = idMap[skill.category]
+      if (sid) {
+        const s = cm.skillManager.getSkill(sid)
+        if (s) s.cdModifier = (s.cdModifier || 0) - skill.cdReduce
       }
     }
 
-    // --- 镜像伤害加成（临时 buff，每次选技能叠加） ---
-    if (skill.mirrorDmgBuff) {
-      cm.damageCalculator.addDamageIncrease(skill.mirrorDmgBuff)
-    }
-    if (skill.mirrorDmgUp) {
-      cm.damageCalculator.addDamageIncrease(skill.mirrorDmgUp)
-    }
-
-    // --- 每个主动技增伤（君子六艺·乐） ---
     if (skill.activeSkillDmgBuff) {
       const ownedCount = Object.keys(useGameStore.getState().skillLevels).length
       cm.damageCalculator.addDamageIncrease(skill.activeSkillDmgBuff * ownedCount)
@@ -232,16 +181,11 @@ export default function GameCanvas({ joystickMoveRef }) {
     waveControllerRef.current = createWaveController(stage, enemiesRef.current)
 
     const cm = new CombatManager()
-    cm.initialize({
-      player: playerRef.current,
-      bullets: bulletsRef.current,
-      enemies: enemiesRef.current
-    })
+    cm.initialize({ player: playerRef.current, bullets: bulletsRef.current, enemies: enemiesRef.current })
     combatManagerRef.current = cm
 
-    // 热重载：重新应用已有技能效果
-    const effects = useGameStore.getState().skillEffects
-    effects.forEach(skill => applySkillToCombatManager(skill))
+    // 热重载：重新应用已有技能
+    useGameStore.getState().skillEffects.forEach(skill => applySkillToCombatManager(skill))
 
     return () => cm.cleanup()
   }, [])
@@ -256,6 +200,7 @@ export default function GameCanvas({ joystickMoveRef }) {
       dt = Math.min(dt, 0.033)
       lastTimeRef.current = time
 
+      // pauseGame 时只渲染，不更新逻辑（升级弹窗期间游戏冻结）
       if (!pauseGame) {
         update(dt)
         tickSkillCooldowns(dt)
@@ -277,39 +222,34 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     waveControllerRef.current?.update(dt)
 
-    if (cm) {
-      cm.update(dt, { player, bullets, enemies })
-    }
+    if (cm) cm.update(dt, { player, bullets, enemies })
 
     /* 子弹移动 */
     bullets.forEach(b => {
       if (!b.orbit) {
         b.x += (b.vx || 0) * dt
-        b.y += (b.vy !== undefined ? b.vy : -(b.speed || 420)) * dt
+        b.y += (b.vy !== undefined ? b.vy : -420) * dt
       } else {
         b.orbit.angle += b.orbit.speed * dt
         b.x = b.orbit.centerX + Math.cos(b.orbit.angle) * b.orbit.radius
         b.y = b.orbit.centerY + Math.sin(b.orbit.angle) * b.orbit.radius
       }
-      if (b.y < -20 || b.y > HEIGHT + 20 || b.x < -20 || b.x > WIDTH + 20) {
-        b.alive = false
-      }
+      if (b.y < -20 || b.y > VIEW_H + 20 || b.x < -100 || b.x > WORLD_W + 100) b.alive = false
     })
 
-    /* 敌人移动 + 2.5D 透视坐标 */
+    /* 敌人移动 + 2.5D 透视（适当倾斜，非汇聚） */
     const slowMod = cm ? cm.getEnemySpeedModifier() : 1
     enemies.forEach(e => {
       e.y += e.speed * dt * slowMod
 
-      // 透视缩放：顶部 0.25x → 底部 1.0x
+      // 缩放：顶部 0.3x → 底部 1.0x
       const t = Math.max(0, Math.min(1, e.y / DEFENSE_LINE))
-      e.scale = 0.25 + t * 0.75
+      e.scale = 0.3 + t * 0.7
 
-      // 透视 X：将敌人 X 向消失点收束
-      // spawnX 是敌人出生时的原始 X（需要在 waveController 中保存）
-      if (e.spawnX === undefined) e.spawnX = e.x
-      // 从消失点 VP_X 插值到 spawnX
-      e.x = VP_X + (e.spawnX - VP_X) * t
+      // X 轴透视：远端向世界中心适当收束（PERSPECTIVE_STRENGTH 控制强度）
+      // spawnX 是世界坐标中的出生 X
+      const worldCenterX = WORLD_W / 2
+      e.x = e.spawnX + (worldCenterX - e.spawnX) * PERSPECTIVE_STRENGTH * (1 - t)
 
       if (e.y >= DEFENSE_LINE) {
         hpRef.current -= 1
@@ -322,24 +262,20 @@ export default function GameCanvas({ joystickMoveRef }) {
       if (!b.alive) return
       enemies.forEach(e => {
         if (!e.alive) return
-        const dist = Math.hypot(b.x - e.x, b.y - e.y)
-        if (dist < (b.size || 4) + e.size * e.scale) {
-          if (cm) {
-            cm.handleBulletHit(b, e)
-          } else {
-            e.hp -= b.damage || 1
-            b.alive = false
-          }
-          if (e.hp <= 0) {
-            e.alive = false
-            gainExp(20)
-          }
+        if (Math.hypot(b.x - e.x, b.y - e.y) < (b.size || 4) + e.size * e.scale) {
+          cm ? cm.handleBulletHit(b, e) : (() => { e.hp -= b.damage || 1; b.alive = false })()
+          if (e.hp <= 0) { e.alive = false; gainExp(20) }
         }
       })
     })
 
     cleanArray(bullets)
     cleanArray(enemies)
+
+    /* 摄像机跟随玩家（平滑插值） */
+    const targetCamX = player.x - VIEW_W / 2
+    const clampedCamX = Math.max(0, Math.min(WORLD_W - VIEW_W, targetCamX))
+    cameraXRef.current += (clampedCamX - cameraXRef.current) * 0.12
   }
 
   /* ---- 渲染 ---- */
@@ -347,22 +283,28 @@ export default function GameCanvas({ joystickMoveRef }) {
     const player = playerRef.current
     const bullets = bulletsRef.current
     const enemies = enemiesRef.current
+    const camX = cameraXRef.current
+
+    ctx.clearRect(0, 0, VIEW_W, VIEW_H)
 
     /* 背景渐变 */
-    const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT)
+    const bg = ctx.createLinearGradient(0, 0, 0, VIEW_H)
     bg.addColorStop(0, '#0a0a1a')
     bg.addColorStop(1, '#111122')
     ctx.fillStyle = bg
-    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H)
 
-    /* 透视地面线 */
-    ctx.strokeStyle = '#2a2a3a'
+    /* 透视地面线（从世界顶部向底部辐射，随摄像机偏移） */
+    ctx.strokeStyle = '#1e1e30'
     ctx.lineWidth = 1
-    for (let i = 0; i < 7; i++) {
-      const x = (i / 6) * WIDTH
+    const lineCount = 10
+    for (let i = 0; i <= lineCount; i++) {
+      // 底部均匀分布，顶部向中心收束
+      const bottomX = (i / lineCount) * WORLD_W - camX
+      const topX = VIEW_W / 2 + (bottomX - VIEW_W / 2) * (1 - PERSPECTIVE_STRENGTH)
       ctx.beginPath()
-      ctx.moveTo(VP_X, VP_Y)
-      ctx.lineTo(x, DEFENSE_LINE)
+      ctx.moveTo(topX, 0)
+      ctx.lineTo(bottomX, DEFENSE_LINE)
       ctx.stroke()
     }
 
@@ -371,95 +313,91 @@ export default function GameCanvas({ joystickMoveRef }) {
     ctx.lineWidth = 2
     ctx.beginPath()
     ctx.moveTo(0, DEFENSE_LINE)
-    ctx.lineTo(WIDTH, DEFENSE_LINE)
+    ctx.lineTo(VIEW_W, DEFENSE_LINE)
     ctx.stroke()
 
-    /* 敌人（按 y 排序，近的后画，覆盖远的） */
+    /* 敌人（按 y 排序，近的后画） */
     const sortedEnemies = [...enemies].sort((a, b) => a.y - b.y)
-    sortedEnemies.forEach(e => renderEnemy(ctx, e))
+    sortedEnemies.forEach(e => renderEnemy(ctx, e, camX))
 
     /* 子弹 */
     bullets.forEach(b => {
+      const sx = b.x - camX
       ctx.fillStyle = b.color || '#fff'
       ctx.beginPath()
-      ctx.arc(b.x, b.y, b.size || 4, 0, Math.PI * 2)
+      ctx.arc(sx, b.y, b.size || 4, 0, Math.PI * 2)
       ctx.fill()
     })
 
     /* 玩家 */
-    renderPlayer(ctx, player)
+    renderPlayer(ctx, player, camX)
 
     /* HUD */
     renderHUD(ctx)
   }
 
-  /* ---- 渲染敌人（2.5D） ---- */
-  function renderEnemy(ctx, e) {
+  /* ---- 渲染敌人 ---- */
+  function renderEnemy(ctx, e, camX) {
+    const sx = e.x - camX
     const size = e.size * e.scale
 
-    /* 地面阴影 */
+    /* 阴影 */
     ctx.save()
     ctx.globalAlpha = 0.3 * e.scale
     ctx.fillStyle = '#000'
     ctx.beginPath()
-    ctx.ellipse(e.x, e.y + size * 0.5, size * 0.6, size * 0.15, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.restore()
-
-    /* 本体：颜色随距离变化（远端暗红，近端鲜红） */
-    const r = Math.floor(160 + 95 * e.scale)
-    const g = Math.floor(20 * e.scale)
-    const b = Math.floor(20 * e.scale)
-    ctx.fillStyle = `rgb(${r},${g},${b})`
-    ctx.fillRect(e.x - size / 2, e.y - size / 2, size, size)
-
-    /* 高光 */
-    ctx.fillStyle = `rgba(255,255,255,${0.12 * e.scale})`
-    ctx.fillRect(e.x - size / 2 + 1, e.y - size / 2 + 1, size * 0.35, size * 0.3)
-
-    /* 血条 */
-    if (e.maxHp > 0) {
-      const barW = size
-      const barH = Math.max(2, size * 0.1)
-      const barY = e.y - size / 2 - barH - 2
-      ctx.fillStyle = '#222'
-      ctx.fillRect(e.x - barW / 2, barY, barW, barH)
-      ctx.fillStyle = '#0f0'
-      ctx.fillRect(e.x - barW / 2, barY, barW * Math.max(0, e.hp / e.maxHp), barH)
-    }
-  }
-
-  /* ---- 渲染玩家 ---- */
-  function renderPlayer(ctx, player) {
-    const size = 30
-
-    /* 阴影 */
-    ctx.save()
-    ctx.globalAlpha = 0.4
-    ctx.fillStyle = '#000'
-    ctx.beginPath()
-    ctx.ellipse(player.x, player.y + size * 0.45, size * 0.6, size * 0.18, 0, 0, Math.PI * 2)
+    ctx.ellipse(sx, e.y + size * 0.5, size * 0.6, size * 0.15, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
 
     /* 本体 */
-    ctx.fillStyle = '#4af'
-    ctx.fillRect(player.x - size / 2, player.y - size / 2, size, size)
+    const r = Math.floor(160 + 95 * e.scale)
+    const g = Math.floor(20 * e.scale)
+    ctx.fillStyle = `rgb(${r},${g},${g})`
+    ctx.fillRect(sx - size / 2, e.y - size / 2, size, size)
 
     /* 高光 */
+    ctx.fillStyle = `rgba(255,255,255,${0.12 * e.scale})`
+    ctx.fillRect(sx - size / 2 + 1, e.y - size / 2 + 1, size * 0.35, size * 0.3)
+
+    /* 血条 */
+    if (e.maxHp > 0) {
+      const barW = size, barH = Math.max(2, size * 0.1)
+      const barY = e.y - size / 2 - barH - 2
+      ctx.fillStyle = '#222'
+      ctx.fillRect(sx - barW / 2, barY, barW, barH)
+      ctx.fillStyle = '#0f0'
+      ctx.fillRect(sx - barW / 2, barY, barW * Math.max(0, e.hp / e.maxHp), barH)
+    }
+  }
+
+  /* ---- 渲染玩家 ---- */
+  function renderPlayer(ctx, player, camX) {
+    const sx = player.x - camX
+    const size = 30
+
+    ctx.save()
+    ctx.globalAlpha = 0.4
+    ctx.fillStyle = '#000'
+    ctx.beginPath()
+    ctx.ellipse(sx, player.y + size * 0.45, size * 0.6, size * 0.18, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+
+    ctx.fillStyle = '#4af'
+    ctx.fillRect(sx - size / 2, player.y - size / 2, size, size)
+
     ctx.fillStyle = 'rgba(255,255,255,0.18)'
-    ctx.fillRect(player.x - size / 2 + 2, player.y - size / 2 + 2, size * 0.4, size * 0.35)
+    ctx.fillRect(sx - size / 2 + 2, player.y - size / 2 + 2, size * 0.4, size * 0.35)
   }
 
   /* ---- 渲染 HUD ---- */
   function renderHUD(ctx) {
     const { exp, expMax, level } = useGameStore.getState()
-
     ctx.font = 'bold 14px Arial'
     ctx.fillStyle = '#fff'
     ctx.fillText(`HP: ${hpRef.current}`, 10, 22)
     ctx.fillText(`Lv.${level}`, 10, 40)
-
     ctx.fillStyle = '#333'
     ctx.fillRect(10, 46, 130, 7)
     ctx.fillStyle = '#4af'
@@ -474,19 +412,25 @@ export default function GameCanvas({ joystickMoveRef }) {
     const canvas = canvasRef.current
     const player = playerRef.current
 
+    // 摇杆：每帧传入屏幕 dx，换算为世界坐标偏移
+    // 速度系数 0.11（原来约 0.55，现在降为 1/5）
     if (joystickMoveRef) {
       joystickMoveRef.current = (screenDx) => {
         const rect = canvas.getBoundingClientRect()
-        const scaleX = WIDTH / rect.width
-        player.x = Math.max(20, Math.min(WIDTH - 20, player.x + screenDx * scaleX))
+        const scaleX = VIEW_W / rect.width
+        // 速度降为原来 1/5：乘以 0.11（原 scaleX 直接映射）
+        const worldDx = screenDx * scaleX * 0.20
+        player.x = Math.max(20, Math.min(WORLD_W - 20, player.x + worldDx))
       }
     }
 
+    // PC 鼠标：绝对定位，映射到世界坐标
     function onMouseMove(e) {
       const rect = canvas.getBoundingClientRect()
-      const scaleX = WIDTH / rect.width
-      const x = (e.clientX - rect.left) * scaleX
-      player.x = Math.max(20, Math.min(WIDTH - 20, x))
+      const scaleX = VIEW_W / rect.width
+      const viewX = (e.clientX - rect.left) * scaleX
+      // 鼠标位置 = 摄像机偏移 + 视口内 X
+      player.x = Math.max(20, Math.min(WORLD_W - 20, cameraXRef.current + viewX))
     }
 
     canvas.addEventListener('mousemove', onMouseMove)
@@ -500,22 +444,18 @@ export default function GameCanvas({ joystickMoveRef }) {
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <canvas
         ref={canvasRef}
-        width={WIDTH}
-        height={HEIGHT}
+        width={VIEW_W}
+        height={VIEW_H}
         style={{ width: '100%', height: '100%', display: 'block' }}
       />
       {showModal && (
-        <LevelUpModal
-          choices={levelUpChoices}
-          onPick={handlePickSkill}
-        />
+        <LevelUpModal choices={levelUpChoices} onPick={handlePickSkill} />
       )}
     </div>
   )
 }
 
 /* ================= 工具 ================= */
-
 function cleanArray(arr) {
   for (let i = arr.length - 1; i >= 0; i--) {
     if (!arr[i].alive) arr.splice(i, 1)

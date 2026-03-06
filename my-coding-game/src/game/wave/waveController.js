@@ -65,6 +65,8 @@ export function createWaveController(stage, enemies) {
   }
 }
 
+// 世界宽度 900，敌人在全宽范围内随机生成
+const WORLD_W = 900
 function randomX() {
-  return 40 + Math.random() * (360 - 80)
+  return 60 + Math.random() * (WORLD_W - 120)
 }
