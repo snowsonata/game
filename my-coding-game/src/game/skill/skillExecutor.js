@@ -215,8 +215,14 @@ export class SkillExecutor {
     const { effect } = skill
     const duration = skill.baseDuration * (1 + skill.durationModifier)
     const mirrorCount = effect.mirrorCount || 1
+    const mirrorDamageRatio = 1.0 + (effect.mirrorDamage || 0) + (effect.mirrorDamageBonus || 0)
 
-    // 添加镜像Buff
+    // 通知 GameCanvas 激活分身（分身跟随玩家左右展开）
+    if (typeof this.ctx.onMirrorActivated === 'function') {
+      this.ctx.onMirrorActivated(mirrorCount, duration, mirrorDamageRatio)
+    }
+
+    // 保留 Buff 以兼容旧逻辑（攻速加成等）
     this.ctx.buffManager.addBuff({
       type: BuffType.MIRROR,
       value: mirrorCount,
@@ -224,7 +230,6 @@ export class SkillExecutor {
       source: skill.id
     })
 
-    // 如果有镜像伤害加成
     if (effect.mirrorDamageBonus) {
       const totalBonus = mirrorCount * effect.mirrorDamageBonus
       this.ctx.buffManager.addBuff({

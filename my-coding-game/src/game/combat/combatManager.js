@@ -124,7 +124,7 @@ export class CombatManager {
    * 发射普通攻击
    */
   fireBasicAttack(gameContext) {
-    const { player, bullets } = gameContext
+    const { player, bullets, mirrors } = gameContext
     
     // 计算伤害
     const guaranteedCrit = this.buffManager.isGuaranteedCrit()
@@ -132,16 +132,12 @@ export class CombatManager {
     const critDamageBonus = this.buffManager.getCritDamageBonus()
     const damageBonus = this.buffManager.getDamageBonus()
     
-    // 更新伤害计算器
     this.damageCalculator.setGuaranteedCrit(guaranteedCrit)
     this.damageCalculator.critRate = Math.min(1, this.damageCalculator.critRate + critRateBonus)
     this.damageCalculator.additionalCritDamage = critDamageBonus
     this.damageCalculator.damageIncrease = damageBonus
     
     const damageResult = this.damageCalculator.calculate(1.0)
-    
-    // 获取镜像数量
-    const mirrorCount = this.buffManager.getMirrorCount()
     
     // 发射主弹幕
     this.createBasicBullet({
@@ -152,17 +148,18 @@ export class CombatManager {
       bullets
     })
     
-    // 发射镜像弹幕（左右对称分布，平均间距 35px）
-    for (let i = 0; i < mirrorCount; i++) {
-      const side = i % 2 === 0 ? 1 : -1
-      const dist = Math.ceil((i + 1) / 2) * 35
-      const offsetX = side * dist
-      this.createBasicBullet({
-        x: player.x + offsetX,
-        y: player.y,
-        damage: damageResult.damage,
-        isCrit: damageResult.isCrit,
-        bullets
+    // 发射分身弹幕（每个活跃分身也射击）
+    if (mirrors && mirrors.length > 0) {
+      mirrors.forEach(mirror => {
+        if (!mirror.alive) return
+        const mirrorDmg = damageResult.damage * (mirror.damageRatio || 1.0)
+        this.createBasicBullet({
+          x: mirror.x,
+          y: player.y,
+          damage: mirrorDmg,
+          isCrit: damageResult.isCrit,
+          bullets
+        })
       })
     }
     

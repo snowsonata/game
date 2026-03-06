@@ -190,6 +190,10 @@ export default function GameCanvas({ joystickMoveRef }) {
   const bulletsRef = useRef([])
   const enemiesRef = useRef([])
   const hpRef = useRef(10)
+  // 伤害数字浮动数组
+  const dmgNumsRef = useRef([])
+  // AI工具分身数组
+  const mirrorsRef = useRef([])
 
   /* ---- store 订阅 ---- */
   const pauseGame          = useGameStore(s => s.pauseGame)
@@ -254,12 +258,10 @@ export default function GameCanvas({ joystickMoveRef }) {
     const cm = new CombatManager()
 
     // 注入 CD 回调：CombatManager 触发技能时同步更新 store 的 skillCooldowns
-    // 这样 SkillHUD 才能读到正确的冷却时间
     cm.onSkillTriggered = (skillId) => {
       const category = Object.entries(CATEGORY_TO_SKILL_ID)
         .find(([, sid]) => sid === skillId)?.[0]
       if (!category) return
-      // 从 CombatManager 读取实际 CD（包含强化后的 CD 修正）
       const actualCd = cm.skillManager.getSkillMaxCooldown(skillId)
       triggerSkillCooldown(category, actualCd)
     }
@@ -267,7 +269,26 @@ export default function GameCanvas({ joystickMoveRef }) {
     cm.initialize({
       player: playerRef.current,
       bullets: bulletsRef.current,
-      enemies: enemiesRef.current
+      enemies: enemiesRef.current,
+      mirrors: mirrorsRef.current,
+      // AI工具分身激活回调
+      onMirrorActivated: (count, duration, damageRatio) => {
+        const player = playerRef.current
+        // 清除旧分身，重新生成
+        mirrorsRef.current.length = 0
+        for (let i = 0; i < count; i++) {
+          const side = i % 2 === 0 ? 1 : -1
+          const dist = Math.ceil((i + 1) / 2) * 50  // 分身展开间距 50px
+          mirrorsRef.current.push({
+            offsetX: side * dist,  // 相对玩家的偏移
+            x: player.x + side * dist,
+            alive: true,
+            life: duration,
+            maxLife: duration,
+            damageRatio
+          })
+        }
+      }
     })
     combatManagerRef.current = cm
 
@@ -312,7 +333,16 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     waveControllerRef.current?.update(dt)
 
-    if (cm) cm.update(dt, { player, bullets, enemies })
+    /* 分身更新：跟随玩家、倒计时、到期清除 */
+    const mirrors = mirrorsRef.current
+    for (let i = mirrors.length - 1; i >= 0; i--) {
+      const m = mirrors[i]
+      m.life -= dt
+      m.x = player.x + m.offsetX  // 实时跟随玩家
+      if (m.life <= 0) mirrors.splice(i, 1)
+    }
+
+    if (cm) cm.update(dt, { player, bullets, enemies, mirrors })
 
     /* 子弹移动 */
     bullets.forEach(b => {
@@ -344,11 +374,39 @@ export default function GameCanvas({ joystickMoveRef }) {
       enemies.forEach(e => {
         if (!e.alive) return
         if (Math.hypot(b.x - e.x, b.y - e.y) < (b.size || 4) + e.size * e.scale) {
-          cm ? cm.handleBulletHit(b, e) : (() => { e.hp -= b.damage || 1; b.alive = false })()
+          let dmg = b.damage || 1
+          let isCrit = b.isCrit || false
+          if (cm) {
+            const result = cm.handleBulletHit(b, e)
+            if (typeof result === 'number') dmg = result
+          } else {
+            e.hp -= dmg
+            b.alive = false
+          }
+          // 记录伤害数字
+          dmgNumsRef.current.push({
+            x: e.x,
+            y: e.y - e.size * e.scale * 0.5,
+            value: Math.round(dmg),
+            isCrit,
+            alpha: 1.0,
+            vy: -60,   // 每秒上浮 60px
+            life: 1.2  // 存活 1.2 秒
+          })
           if (e.hp <= 0) { e.alive = false; gainExp(20) }
         }
       })
     })
+
+    /* 更新伤害数字 */
+    const dmgNums = dmgNumsRef.current
+    for (let i = dmgNums.length - 1; i >= 0; i--) {
+      const n = dmgNums[i]
+      n.y += n.vy * dt
+      n.life -= dt
+      n.alpha = Math.max(0, n.life / 1.2)
+      if (n.life <= 0) dmgNums.splice(i, 1)
+    }
 
     cleanArray(bullets)
     cleanArray(enemies)
@@ -406,11 +464,75 @@ export default function GameCanvas({ joystickMoveRef }) {
       ctx.fill()
     })
 
+    /* AI工具分身 */
+    mirrorsRef.current.forEach(m => renderMirror(ctx, m, camX))
+
     /* 玩家 */
     renderPlayer(ctx, player, camX)
 
+    /* 伤害数字 */
+    renderDamageNumbers(ctx, dmgNumsRef.current, camX)
+
     /* HUD */
     renderHUD(ctx)
+  }
+
+  function renderMirror(ctx, m, camX) {
+    const sx = m.x - camX
+    const player = playerRef.current
+    const sy = player.y
+    const size = 30
+    const lifeRatio = Math.max(0, m.life / m.maxLife)
+
+    ctx.save()
+    // 分身半透明蓝色身体
+    ctx.globalAlpha = 0.55 + 0.2 * lifeRatio
+    ctx.fillStyle = '#2af'
+    ctx.fillRect(sx - size / 2, sy - size / 2, size, size)
+    // 高光
+    ctx.fillStyle = 'rgba(255,255,255,0.15)'
+    ctx.fillRect(sx - size / 2 + 2, sy - size / 2 + 2, size * 0.4, size * 0.35)
+    // 剩余时间弧线（圆形进度环）
+    ctx.globalAlpha = 0.9
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.arc(sx, sy, size * 0.65, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifeRatio)
+    ctx.stroke()
+    // 标识文字
+    ctx.globalAlpha = 0.8
+    ctx.font = 'bold 9px Arial'
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.fillText('AI', sx, sy + 4)
+    ctx.textAlign = 'left'
+    ctx.restore()
+  }
+
+  function renderDamageNumbers(ctx, nums, camX) {
+    nums.forEach(n => {
+      const sx = n.x - camX
+      ctx.save()
+      ctx.globalAlpha = n.alpha
+      if (n.isCrit) {
+        // 暴击：金色加粗加大
+        ctx.font = 'bold 18px Arial'
+        ctx.fillStyle = '#FFD700'
+        ctx.strokeStyle = '#7a4000'
+        ctx.lineWidth = 3
+        ctx.strokeText(`${n.value}!`, sx - 10, n.y)
+        ctx.fillText(`${n.value}!`, sx - 10, n.y)
+      } else {
+        // 普通伤害：白色
+        ctx.font = 'bold 14px Arial'
+        ctx.fillStyle = '#ffffff'
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = 2
+        ctx.strokeText(`${n.value}`, sx - 8, n.y)
+        ctx.fillText(`${n.value}`, sx - 8, n.y)
+      }
+      ctx.restore()
+    })
   }
 
   function renderEnemy(ctx, e, camX) {

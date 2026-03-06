@@ -42,8 +42,8 @@ export default function Game() {
       <SkillHUD />
       <VirtualJoystick onMove={handleJoystickMove} />
 
-      {/* ===== 左上角暂停/退出混合按钮 ===== */}
-      <div style={{ position: 'absolute', top: 8, left: 8, zIndex: 40 }}>
+      {/* ===== 暂停/退出混合按钮（右上角，避免与左上角 HUD 重叠） ===== */}
+      <div style={{ position: 'absolute', top: 8, right: 52, zIndex: 40 }}>
         {/* 主按钮：汉堡图标（暂停中变为 ▶） */}
         <button
           onClick={togglePause}

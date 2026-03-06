@@ -137,7 +137,7 @@ export default function SkillHUD() {
       style={{
         position: 'absolute',
         top: 8,
-        right: 8,
+        right: 8,  // 暂停按钮在 right:52，不重叠
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
