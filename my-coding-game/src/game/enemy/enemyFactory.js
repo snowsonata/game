@@ -18,6 +18,7 @@ export function createEnemy({ type, x, y = -20, wave }) {
 
     x,
     y,
+    spawnX: x,   // 记录出生时的 X，用于 2.5D 透视收束计算
 
     size: base.size,
 
@@ -27,7 +28,7 @@ export function createEnemy({ type, x, y = -20, wave }) {
 
     speed: base.speed * wave.speedFactor,
 
-    scale: 1,
+    scale: 0.25,  // 初始缩放（顶部远端）
     alive: true
   }
 }
