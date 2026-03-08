@@ -220,6 +220,10 @@ export default function GameCanvas({ joystickMoveRef }) {
   const dmgNumsRef = useRef([])
   // AI工具分身数组
   const mirrorsRef = useRef([])
+  // 减时特效数组（敌人触线时显示 -1s 红色浮动文字 + 防守线闪光）
+  const timePenaltyFXRef = useRef([])
+  // 防守线闪光强度（0~1，触线时设为1，逐渐衰减）
+  const defenseLineFlashRef = useRef(0)
 
   // 游戏结束标志（防止重复触发）
   const gameOverFiredRef = useRef(false)
@@ -440,10 +444,21 @@ export default function GameCanvas({ joystickMoveRef }) {
       const worldCenterX = WORLD_W / 2
       e.x = e.spawnX + (worldCenterX - e.spawnX) * PERSPECTIVE_STRENGTH * (1 - t)
 
-      // 敌人触线：减少1秒倒计时（而非减HP）
+      // 敌人触线：减少1秒倒计时 + 触发特效
       if (e.y >= DEFENSE_LINE) {
         timeLeftRef.current = Math.max(0, timeLeftRef.current - 1)
         e.alive = false
+        // 生成 -1s 浮动文字特效
+        timePenaltyFXRef.current.push({
+          x: e.x,
+          y: DEFENSE_LINE - 10,
+          alpha: 1.0,
+          vy: -55,
+          life: 1.4,
+          maxLife: 1.4
+        })
+        // 触发防守线闪光
+        defenseLineFlashRef.current = 1.0
       }
     })
 
@@ -486,6 +501,20 @@ export default function GameCanvas({ joystickMoveRef }) {
       if (n.life <= 0) dmgNums.splice(i, 1)
     }
 
+    /* 更新减时特效 */
+    const tpFX = timePenaltyFXRef.current
+    for (let i = tpFX.length - 1; i >= 0; i--) {
+      const f = tpFX[i]
+      f.y += f.vy * dt
+      f.life -= dt
+      f.alpha = Math.max(0, f.life / f.maxLife)
+      if (f.life <= 0) tpFX.splice(i, 1)
+    }
+    // 防守线闪光衰减
+    if (defenseLineFlashRef.current > 0) {
+      defenseLineFlashRef.current = Math.max(0, defenseLineFlashRef.current - dt * 3.5)
+    }
+
     cleanArray(bullets)
     cleanArray(enemies)
 
@@ -522,13 +551,27 @@ export default function GameCanvas({ joystickMoveRef }) {
       ctx.stroke()
     }
 
-    /* 防守线 */
-    ctx.strokeStyle = '#555'
-    ctx.lineWidth = 2
+    /* 防守线（敌人触线时闪红光） */
+    const flashIntensity = defenseLineFlashRef.current
+    if (flashIntensity > 0) {
+      // 闪光光晗（全屏红色半透明覆盖）
+      ctx.fillStyle = `rgba(255,40,40,${flashIntensity * 0.22})`
+      ctx.fillRect(0, DEFENSE_LINE - 30, VIEW_W, 60)
+      // 防守线本身变亮红
+      ctx.strokeStyle = `rgba(255,80,80,${0.4 + flashIntensity * 0.6})`
+      ctx.lineWidth = 2 + flashIntensity * 2
+      ctx.shadowColor = '#ff3030'
+      ctx.shadowBlur = 8 * flashIntensity
+    } else {
+      ctx.strokeStyle = '#555'
+      ctx.lineWidth = 2
+      ctx.shadowBlur = 0
+    }
     ctx.beginPath()
     ctx.moveTo(0, DEFENSE_LINE)
     ctx.lineTo(VIEW_W, DEFENSE_LINE)
     ctx.stroke()
+    ctx.shadowBlur = 0
 
     /* 敌人（按 y 排序） */
     const sortedEnemies = [...enemies].sort((a, b) => a.y - b.y)
@@ -550,6 +593,9 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     /* 伤害数字 */
     renderDamageNumbers(ctx, dmgNumsRef.current, camX)
+
+    /* 减时特效：-1s 浮动文字 */
+    renderTimePenaltyFX(ctx, timePenaltyFXRef.current, camX)
 
     /* Canvas HUD（仅波次信息，等级/时间/经验值在React层） */
     renderHUD(ctx)
@@ -647,6 +693,31 @@ export default function GameCanvas({ joystickMoveRef }) {
     ctx.fillRect(sx - size / 2, player.y - size / 2, size, size)
     ctx.fillStyle = 'rgba(255,255,255,0.18)'
     ctx.fillRect(sx - size / 2 + 2, player.y - size / 2 + 2, size * 0.4, size * 0.35)
+  }
+
+  function renderTimePenaltyFX(ctx, fxList, camX) {
+    fxList.forEach(f => {
+      const sx = f.x - camX
+      ctx.save()
+      ctx.globalAlpha = f.alpha
+
+      // 外发光效果
+      ctx.shadowColor = '#ff2020'
+      ctx.shadowBlur = 10
+
+      // 大号红色加粗 "-1s"
+      ctx.font = 'bold 22px Arial'
+      ctx.fillStyle = '#ff4444'
+      ctx.strokeStyle = '#800000'
+      ctx.lineWidth = 3
+      ctx.textAlign = 'center'
+      ctx.strokeText('-1s', sx, f.y)
+      ctx.fillText('-1s', sx, f.y)
+
+      ctx.shadowBlur = 0
+      ctx.textAlign = 'left'
+      ctx.restore()
+    })
   }
 
   function renderHUD(ctx) {

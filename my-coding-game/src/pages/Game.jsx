@@ -173,7 +173,9 @@ export default function Game() {
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <GameCanvas joystickMoveRef={joystickMoveRef} />
       <SkillHUD />
-      <VirtualJoystick onMove={handleJoystickMove} />
+
+      {/* ★ 传递 paused 给摇杆，暂停时停止推送移动量 */}
+      <VirtualJoystick onMove={handleJoystickMove} paused={pauseGame} />
 
       {/* ===== 左上角：等级 + 经验值 ===== */}
       <LevelExpHUD />
@@ -181,12 +183,25 @@ export default function Game() {
       {/* ===== 顶部正中：倒计时 ===== */}
       <TimerHUD />
 
-      {/* ===== 右上角：暂停按钮 ===== */}
-      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 40 }}>
+      {/* ===== 右上角：暂停按钮（固定位置，菜单绝对定位不影响按钮位置） ===== */}
+      <div style={{
+        position: 'absolute',
+        top: 8,
+        right: 8,
+        zIndex: 40,
+        /* ★ 修复：不使用 flexDirection:column，避免菜单展开时撑开容器导致按钮偏移 */
+        width: 36,
+        height: 36
+      }}>
+        {/* 暂停/继续图标按钮（固定在右上角，不随菜单移动） */}
         <button
           onClick={togglePause}
           style={{
-            width: 36, height: 36,
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: 36,
+            height: 36,
             borderRadius: 8,
             background: 'rgba(0,0,0,0.65)',
             border: '1.5px solid rgba(255,255,255,0.25)',
@@ -202,10 +217,12 @@ export default function Game() {
           {menuOpen ? '▶' : '⏸'}
         </button>
 
-        {/* 展开菜单（暂停时显示） */}
+        {/* ★ 展开菜单：绝对定位在按钮正下方，不影响按钮本身位置 */}
         {menuOpen && (
           <div style={{
-            marginTop: 6,
+            position: 'absolute',
+            top: 42,   /* 按钮高度36 + 间距6 */
+            right: 0,
             display: 'flex',
             flexDirection: 'column',
             gap: 6
@@ -268,15 +285,12 @@ function GameOverScreen({ onExit }) {
       justifyContent: 'center',
       gap: 16
     }}>
-      {/* 标题 */}
       <div style={{ fontSize: 36, fontWeight: 'bold', color: '#f44', textShadow: '0 0 20px #f44' }}>
         ✕ 时间耗尽
       </div>
       <div style={{ color: '#aaa', fontSize: 14 }}>
         敌人突破了防线……
       </div>
-
-      {/* 统计 */}
       <div style={{
         background: 'rgba(255,255,255,0.06)',
         border: '1px solid rgba(255,255,255,0.15)',
@@ -287,10 +301,9 @@ function GameOverScreen({ onExit }) {
         gap: 8,
         minWidth: 220
       }}>
-        <StatRow label="最终等级" value={`Lv.${level}`} color="#4af" />
-        <StatRow label="技能种类" value={`${skillCount} 种`} color="#fa4" />
+        <StatRow label="最终等级" value={`Lv.${level}`}       color="#4af" />
+        <StatRow label="技能种类" value={`${skillCount} 种`}  color="#fa4" />
       </div>
-
       <button
         onClick={onExit}
         style={{
@@ -301,7 +314,10 @@ function GameOverScreen({ onExit }) {
           border: '1.5px solid rgba(255,255,255,0.2)',
           color: '#fff',
           fontSize: 15,
-          cursor: 'pointer'
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
         }}
       >
         返回主页
@@ -319,7 +335,6 @@ function StatRow({ label, value, color }) {
   )
 }
 
-/* ---- 按钮样式 ---- */
 function menuBtnStyle(bg) {
   return {
     width: 60,
@@ -331,7 +346,6 @@ function menuBtnStyle(bg) {
     fontSize: 13,
     cursor: 'pointer',
     backdropFilter: 'blur(4px)',
-    /* ★ 修复：文字居中 */
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center'
