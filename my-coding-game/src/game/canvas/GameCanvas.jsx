@@ -17,9 +17,11 @@ const DEFENSE_LINE = 520
 // 2.5D 参数
 const PERSPECTIVE_STRENGTH = 0.30
 
+// 倒计时初始值（秒）
+const INITIAL_TIME = 60
+
 /* ================================================================
  * skillPool.category → skillDefinitions skillId 映射
- * 用于首次获得某大类时注册主技能
  * ================================================================ */
 const CATEGORY_TO_SKILL_ID = {
   '笔记本电脑': 'laptop',
@@ -35,7 +37,6 @@ const CATEGORY_TO_SKILL_ID = {
  * skillPool.id → skillDefinitions upgradeId 完整映射表
  * ================================================================ */
 const SKILL_POOL_MAP = {
-  // ---- 笔记本电脑 ----
   '磁盘清理':   { upgradeId: 'laptop_disk_cleanup' },
   '校园网':     { upgradeId: 'laptop_campus_network' },
   '快捷键':     { upgradeId: 'laptop_hotkey' },
@@ -46,8 +47,6 @@ const SKILL_POOL_MAP = {
   '低耗模式':   { upgradeId: 'laptop_low_power' },
   '科学上网':   { upgradeId: 'laptop_vpn' },
   '"科学上网"': { upgradeId: 'laptop_vpn' },
-
-  // ---- 外卖 ----
   '满减券':     { upgradeId: 'takeout_discount' },
   '急送':       { upgradeId: 'takeout_rush' },
   '黑色液体勺': { upgradeId: 'takeout_black_liquid' },
@@ -58,8 +57,6 @@ const SKILL_POOL_MAP = {
   '犒劳':       { upgradeId: 'takeout_overtime' },
   '"搞劳"':     { upgradeId: 'takeout_overtime' },
   '免配送费':   { upgradeId: 'takeout_free_delivery' },
-
-  // ---- 摸鱼宝典 ----
   '摸鱼计时':   { upgradeId: 'fish_timer' },
   '喝水':       { upgradeId: 'fish_drink' },
   '快速切屏':   { upgradeId: 'fish_quick_switch' },
@@ -69,16 +66,12 @@ const SKILL_POOL_MAP = {
   '跑路枪头':   { upgradeId: 'fish_escape' },
   '厕所遁走':   { upgradeId: 'fish_walk_through' },
   '消息免打扰': { upgradeId: 'fish_dnd' },
-
-  // ---- 电动车 ----
   '头盔':       { upgradeId: 'car_helmet' },
   '充电器':     { upgradeId: 'car_charger' },
   '充电桩':     { upgradeId: 'car_charging_station' },
   '神奇车牌':   { upgradeId: 'car_magic_plate' },
   '武汉交通':   { upgradeId: 'car_wuhan_traffic' },
   '识别码':     { upgradeId: 'car_id_code' },
-
-  // ---- AI工具 ----
   '共创':       { upgradeId: 'ai_co_create' },
   '"共创"':     { upgradeId: 'ai_co_create' },
   '免费额度':   { upgradeId: 'ai_free_quota' },
@@ -86,16 +79,12 @@ const SKILL_POOL_MAP = {
   '提示词优化': { upgradeId: 'ai_prompt_optimize' },
   '一键润色':   { upgradeId: 'ai_polish' },
   '深度思考':   { upgradeId: 'ai_deep_think' },
-
-  // ---- 期末周模式 ----
   '网课':       { upgradeId: 'exam_online_course' },
   '热带冰红茶': { upgradeId: 'exam_ice_tea' },
   'PPT':        { upgradeId: 'exam_ppt' },
   '小抄':       { upgradeId: 'exam_cheat_sheet' },
   '求捞':       { upgradeId: 'exam_beg' },
   '历年真题':   { upgradeId: 'exam_past_papers' },
-
-  // ---- 君子六艺 ----
   '急':         { upgradeId: 'arts_taboo' },
   '蚌':         { upgradeId: 'arts_clam' },
   '典':         { upgradeId: 'arts_classic' },
@@ -112,7 +101,7 @@ const SKILL_BASE_DESCRIPTIONS = {
   '外卖':       '【主动技能】持续5秒，在普攻两侧额外发射弹幕（每侧2发），每秒4次，CD 10秒',
   '摸鱼宝典':   '【主动技能】释放时向前方横向打出5发弹幕，CD 3秒',
   '电动车':     '【主动技能】持续3秒，普攻攻击速度提升100%，CD 10秒',
-  'AI工具':     '【主动技能】持续5秒，生成1个AI镜像在主角右侧同步攻击，镜像伤害100%，CD 20秒',
+  'AI工具':     '【主动技能】持续5秒，在主角右侧生成1个AI镜像同步攻击，镜像伤害100%，CD 20秒',
   '期末周模式': '【主动技能】持续5秒，普攻必定暴击，CD 15秒',
   '君子六艺':   '【主动技能】持续5秒，随机向场地内发射25个弹幕，每秒5发，CD 10秒',
 }
@@ -223,11 +212,18 @@ export default function GameCanvas({ joystickMoveRef }) {
   const cameraXRef = useRef(EXTEND)
   const bulletsRef = useRef([])
   const enemiesRef = useRef([])
-  const hpRef = useRef(10)
+
+  // 倒计时（秒），用 ref 存储以避免闭包问题
+  const timeLeftRef = useRef(INITIAL_TIME)
+
   // 伤害数字浮动数组
   const dmgNumsRef = useRef([])
   // AI工具分身数组
   const mirrorsRef = useRef([])
+
+  // 游戏结束标志（防止重复触发）
+  const gameOverFiredRef = useRef(false)
+  const stageClearFiredRef = useRef(false)
 
   /* ---- store 订阅 ---- */
   const pauseGame          = useGameStore(s => s.pauseGame)
@@ -239,6 +235,8 @@ export default function GameCanvas({ joystickMoveRef }) {
   const triggerSkillCooldown = useGameStore(s => s.triggerSkillCooldown)
   const tickSkillCooldowns   = useGameStore(s => s.tickSkillCooldowns)
   const setStageClear        = useGameStore(s => s.setStageClear)
+  const setGameOver          = useGameStore(s => s.setGameOver)
+  const setTimeLeft          = useGameStore(s => s.setTimeLeft)
 
   // 同步 pauseRef
   useEffect(() => { pauseRef.current = pauseGame }, [pauseGame])
@@ -287,6 +285,12 @@ export default function GameCanvas({ joystickMoveRef }) {
     const stage = STAGES[0]
     waveControllerRef.current = createWaveController(stage, enemiesRef.current)
 
+    // 重置倒计时
+    timeLeftRef.current = INITIAL_TIME
+    setTimeLeft(INITIAL_TIME)
+    gameOverFiredRef.current = false
+    stageClearFiredRef.current = false
+
     const cm = new CombatManager()
 
     cm.onSkillTriggered = (skillId) => {
@@ -297,30 +301,33 @@ export default function GameCanvas({ joystickMoveRef }) {
       triggerSkillCooldown(category, actualCd)
     }
 
+    // ★ 关键修复：将 onMirrorActivated 存储在 cm 实例上，
+    //   而非仅在 initialize 的 gameContext 里，确保 triggerSkill 时也能访问
+    cm.onMirrorActivated = (count, duration, damageRatio) => {
+      const player = playerRef.current
+      mirrorsRef.current.length = 0
+      for (let i = 0; i < count; i++) {
+        // 所有镜像显示在主角右侧，间距 50px
+        const dist = (i + 1) * 50
+        mirrorsRef.current.push({
+          offsetX: dist,
+          x: player.x + dist,
+          alive: true,
+          life: duration,
+          maxLife: duration,
+          damageRatio
+        })
+      }
+    }
+
     cm.initialize({
       player: playerRef.current,
       bullets: bulletsRef.current,
       enemies: enemiesRef.current,
       mirrors: mirrorsRef.current,
-      // AI工具分身激活回调
-      onMirrorActivated: (count, duration, damageRatio) => {
-        const player = playerRef.current
-        // 清除旧分身，重新生成
-        mirrorsRef.current.length = 0
-        for (let i = 0; i < count; i++) {
-          // ★ 所有镜像显示在主角右侧，间距 50px
-          const dist = (i + 1) * 50
-          mirrorsRef.current.push({
-            offsetX: dist,           // 正值 = 右侧
-            x: player.x + dist,
-            alive: true,
-            life: duration,
-            maxLife: duration,
-            damageRatio
-          })
-        }
-      }
+      onMirrorActivated: cm.onMirrorActivated
     })
+
     combatManagerRef.current = cm
 
     // 热重载：重新应用已有技能
@@ -353,7 +360,7 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     rafRef.current = requestAnimationFrame(loop)
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }
-  }, [])  // 只挂载一次，不依赖 pauseGame
+  }, [])
 
   /* ---- 更新逻辑 ---- */
   function update(dt) {
@@ -362,10 +369,27 @@ export default function GameCanvas({ joystickMoveRef }) {
     const enemies = enemiesRef.current
     const cm = combatManagerRef.current
 
-    // 检测通关
+    // ---- 倒计时 ----
+    timeLeftRef.current = Math.max(0, timeLeftRef.current - dt)
+    // 每秒同步一次到 store（减少 re-render 频率）
+    const timeInt = Math.ceil(timeLeftRef.current)
+    const storeTime = useGameStore.getState().timeLeft
+    if (timeInt !== storeTime) {
+      setTimeLeft(timeInt)
+    }
+
+    // ---- 检测通关（波次清除）----
     const waveState = waveControllerRef.current?.getState()
-    if (waveState === 'STAGE_CLEAR') {
+    if (waveState === 'STAGE_CLEAR' && !stageClearFiredRef.current) {
+      stageClearFiredRef.current = true
       setStageClear(true)
+      return
+    }
+
+    // ---- 检测失败（时间归零）----
+    if (timeLeftRef.current <= 0 && !gameOverFiredRef.current && !stageClearFiredRef.current) {
+      gameOverFiredRef.current = true
+      setGameOver(true)
       return
     }
 
@@ -378,6 +402,18 @@ export default function GameCanvas({ joystickMoveRef }) {
       m.life -= dt
       m.x = player.x + m.offsetX  // 实时跟随玩家（始终在右侧）
       if (m.life <= 0) mirrors.splice(i, 1)
+    }
+
+    // ★ 关键修复：每帧更新 skillExecutor 的 ctx，确保 onMirrorActivated 始终可用
+    if (cm && cm.skillExecutor) {
+      cm.skillExecutor.ctx = {
+        ...cm.skillExecutor.ctx,
+        player,
+        bullets,
+        enemies,
+        mirrors,
+        onMirrorActivated: cm.onMirrorActivated
+      }
     }
 
     if (cm) cm.update(dt, { player, bullets, enemies, mirrors })
@@ -403,7 +439,12 @@ export default function GameCanvas({ joystickMoveRef }) {
       e.scale = 0.3 + t * 0.7
       const worldCenterX = WORLD_W / 2
       e.x = e.spawnX + (worldCenterX - e.spawnX) * PERSPECTIVE_STRENGTH * (1 - t)
-      if (e.y >= DEFENSE_LINE) { hpRef.current -= 1; e.alive = false }
+
+      // 敌人触线：减少1秒倒计时（而非减HP）
+      if (e.y >= DEFENSE_LINE) {
+        timeLeftRef.current = Math.max(0, timeLeftRef.current - 1)
+        e.alive = false
+      }
     })
 
     /* 碰撞检测 */
@@ -421,7 +462,6 @@ export default function GameCanvas({ joystickMoveRef }) {
             e.hp -= dmg
             b.alive = false
           }
-          // 记录伤害数字
           dmgNumsRef.current.push({
             x: e.x,
             y: e.y - e.size * e.scale * 0.5,
@@ -511,7 +551,7 @@ export default function GameCanvas({ joystickMoveRef }) {
     /* 伤害数字 */
     renderDamageNumbers(ctx, dmgNumsRef.current, camX)
 
-    /* HUD（仅HP，等级/经验值已移至React层） */
+    /* Canvas HUD（仅波次信息，等级/时间/经验值在React层） */
     renderHUD(ctx)
   }
 
@@ -523,21 +563,17 @@ export default function GameCanvas({ joystickMoveRef }) {
     const lifeRatio = Math.max(0, m.life / m.maxLife)
 
     ctx.save()
-    // 分身半透明蓝色身体
     ctx.globalAlpha = 0.55 + 0.2 * lifeRatio
     ctx.fillStyle = '#2af'
     ctx.fillRect(sx - size / 2, sy - size / 2, size, size)
-    // 高光
     ctx.fillStyle = 'rgba(255,255,255,0.15)'
     ctx.fillRect(sx - size / 2 + 2, sy - size / 2 + 2, size * 0.4, size * 0.35)
-    // 剩余时间弧线（圆形进度环）
     ctx.globalAlpha = 0.9
     ctx.strokeStyle = '#fff'
     ctx.lineWidth = 2.5
     ctx.beginPath()
     ctx.arc(sx, sy, size * 0.65, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lifeRatio)
     ctx.stroke()
-    // 标识文字
     ctx.globalAlpha = 0.8
     ctx.font = 'bold 9px Arial'
     ctx.fillStyle = '#fff'
@@ -614,27 +650,32 @@ export default function GameCanvas({ joystickMoveRef }) {
   }
 
   function renderHUD(ctx) {
-    // 仅渲染 HP（等级/经验值已移至 React 层的 LevelExpHUD 组件）
-    ctx.font = 'bold 14px Arial'
-    ctx.fillStyle = '#fff'
-    ctx.fillText(`HP: ${hpRef.current}`, 10, 22)
+    // Canvas HUD 已全部移至 React 层，此处留空
   }
 
-  /* ---- 操控 ---- */
+  /* ---- 操控 ----
+   * ★ 关键修复：鼠标/摇杆移动逻辑不受 pauseRef 限制，
+   *   暂停时玩家依然可以左右移动
+   */
   useEffect(() => {
     const canvas = canvasRef.current
     const player = playerRef.current
 
     if (joystickMoveRef) {
       joystickMoveRef.current = (screenDx) => {
+        // 暂停时也允许移动（不检查 pauseRef）
         const rect = canvas.getBoundingClientRect()
         const scaleX = VIEW_W / rect.width
         const worldDx = screenDx * scaleX * 0.04
         player.x = Math.max(20, Math.min(WORLD_W - 20, player.x + worldDx))
+        // 同步摄像机（暂停时也需要更新，否则画面不跟随）
+        const targetCamX = player.x - VIEW_W / 2
+        cameraXRef.current = Math.max(0, Math.min(WORLD_W - VIEW_W, targetCamX))
       }
     }
 
     function onMouseMove(e) {
+      // 暂停时也允许鼠标移动主角
       const rect = canvas.getBoundingClientRect()
       const scaleX = VIEW_W / rect.width
       const viewX = (e.clientX - rect.left) * scaleX

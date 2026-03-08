@@ -10,7 +10,9 @@ import { BuffType } from '../buff/buffSystem'
  */
 export class SkillExecutor {
   constructor(gameContext) {
-    this.ctx = gameContext // { player, bullets, enemies, buffManager, damageCalculator }
+    this.ctx = gameContext
+    // ★ 将 onMirrorActivated 单独保存，防止 ctx 被覆盖时丢失
+    this._onMirrorActivated = gameContext.onMirrorActivated || null
   }
 
   /**
@@ -53,7 +55,6 @@ export class SkillExecutor {
     const { effect } = skill
     const pattern = getPattern(effect.pattern || 'line')
     
-    // 计算发射次数
     const shots = effect.shots || 1
     
     for (let shot = 0; shot < shots; shot++) {
@@ -65,7 +66,6 @@ export class SkillExecutor {
           rows: effect.rows || 1
         })
 
-        // 计算伤害倍率（第二次发射可能有加成）
         let damageMultiplier = effect.damageMultiplier || 1.0
         if (shot === 1 && effect.secondShotBonus) {
           damageMultiplier += effect.secondShotBonus
@@ -81,7 +81,7 @@ export class SkillExecutor {
             source: skill.id
           })
         })
-      }, shot * 100) // 多次发射间隔100ms
+      }, shot * 100)
     }
   }
 
@@ -112,7 +112,6 @@ export class SkillExecutor {
       })
 
       positions.forEach((pos, index) => {
-        // 外圈弹幕伤害加成
         const isOuter = index >= 2
         const damageBonus = isOuter && effect.outerDamageBonus ? effect.outerDamageBonus : 0
 
@@ -125,7 +124,6 @@ export class SkillExecutor {
       })
     }, interval * 1000)
 
-    // 保存定时器引用以便清理
     if (!this.ctx.skillTimers) this.ctx.skillTimers = new Map()
     this.ctx.skillTimers.set(skill.id, timerId)
   }
@@ -145,7 +143,6 @@ export class SkillExecutor {
     })
 
     positions.forEach((pos, index) => {
-      // 中心弹幕伤害加成
       const isCenter = index === Math.floor(positions.length / 2)
       const damageBonus = isCenter && effect.centerDamageBonus ? effect.centerDamageBonus : 0
 
@@ -167,7 +164,6 @@ export class SkillExecutor {
     const { effect } = skill
     const duration = skill.baseDuration * (1 + skill.durationModifier)
 
-    // 添加攻速Buff
     if (effect.attackSpeedBonus) {
       this.ctx.buffManager.addBuff({
         type: BuffType.ATTACK_SPEED,
@@ -177,7 +173,6 @@ export class SkillExecutor {
       })
     }
 
-    // 添加移速Buff
     if (effect.moveSpeedBonus) {
       this.ctx.buffManager.addBuff({
         type: BuffType.MOVE_SPEED,
@@ -187,7 +182,6 @@ export class SkillExecutor {
       })
     }
 
-    // 添加暴击率Buff
     if (effect.critRate) {
       this.ctx.buffManager.addBuff({
         type: BuffType.CRIT_RATE,
@@ -197,7 +191,6 @@ export class SkillExecutor {
       })
     }
 
-    // 敌人减速
     if (effect.enemySlow) {
       this.ctx.buffManager.addBuff({
         type: BuffType.ENEMY_SLOW,
@@ -210,6 +203,8 @@ export class SkillExecutor {
 
   /**
    * AI工具
+   * ★ 修复：优先从 ctx.onMirrorActivated 获取回调，
+   *   若不存在则从 _onMirrorActivated 备份中获取
    */
   executeAITool(skill) {
     const { effect } = skill
@@ -217,12 +212,14 @@ export class SkillExecutor {
     const mirrorCount = effect.mirrorCount || 1
     const mirrorDamageRatio = 1.0 + (effect.mirrorDamage || 0) + (effect.mirrorDamageBonus || 0)
 
-    // 通知 GameCanvas 激活分身（分身跟随玩家左右展开）
-    if (typeof this.ctx.onMirrorActivated === 'function') {
-      this.ctx.onMirrorActivated(mirrorCount, duration, mirrorDamageRatio)
+    // ★ 优先使用 ctx 中的最新回调，回退到构造时保存的备份
+    const onMirrorActivated = this.ctx.onMirrorActivated || this._onMirrorActivated
+    if (typeof onMirrorActivated === 'function') {
+      onMirrorActivated(mirrorCount, duration, mirrorDamageRatio)
+    } else {
+      console.warn('[AI Tool] onMirrorActivated 回调未找到')
     }
 
-    // 保留 Buff 以兼容旧逻辑（攻速加成等）
     this.ctx.buffManager.addBuff({
       type: BuffType.MIRROR,
       value: mirrorCount,
@@ -248,7 +245,6 @@ export class SkillExecutor {
     const { effect } = skill
     const duration = skill.baseDuration * (1 + skill.durationModifier)
 
-    // 必定暴击
     if (effect.guaranteedCrit) {
       this.ctx.buffManager.addBuff({
         type: BuffType.GUARANTEED_CRIT,
@@ -258,7 +254,6 @@ export class SkillExecutor {
       })
     }
 
-    // 暴击伤害加成
     if (effect.critDamageBonus) {
       this.ctx.buffManager.addBuff({
         type: BuffType.CRIT_DAMAGE,
@@ -268,7 +263,6 @@ export class SkillExecutor {
       })
     }
 
-    // 存储特殊效果到上下文
     if (effect.applyToSkills) {
       this.ctx.examModeActive = true
       setTimeout(() => {
@@ -344,7 +338,6 @@ export class SkillExecutor {
     source = 'unknown',
     pierceDamageBonus = 0
   }) {
-    // 计算伤害
     const baseDamage = this.ctx.damageCalculator.calculate(damageMultiplier)
 
     const bullet = {

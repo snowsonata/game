@@ -15,16 +15,10 @@ import { useGameStore } from '../store/gameStore'
  *   等级加成：每级 +15
  *   HP加成：剩余HP每点 +5
  * ============================= */
-function calcRewards({ level, hp, skillCount }) {
-  const quantum = 10 + level * 2 + Math.max(0, hp)
-  const gold    = 100 + level * 15 + Math.max(0, hp) * 5
-
-  // 技能种类加成
-  const skillBonus = skillCount * 5
-  return {
-    quantum: quantum + skillBonus,
-    gold: gold + skillBonus * 10
-  }
+function calcRewards({ level, timeLeft, skillCount }) {
+  const quantum = 10 + level * 2 + Math.floor(timeLeft / 5) + skillCount * 5
+  const gold    = 100 + level * 15 + timeLeft * 3 + skillCount * 50
+  return { quantum, gold }
 }
 
 /* ===== 数字滚动动画 hook ===== */
@@ -95,14 +89,14 @@ function RewardRow({ icon, label, value, color, delay = 0 }) {
 
 /* ===== 主组件 ===== */
 export default function StageClearScreen({ onExit }) {
-  const level      = useGameStore(s => s.level)
-  const hp         = useGameStore(s => s.hp ?? 10)
+  const level       = useGameStore(s => s.level)
+  const timeLeft    = useGameStore(s => s.timeLeft)
   const skillLevels = useGameStore(s => s.skillLevels)
   const addCurrency = useGameStore(s => s.addCurrency)
 
   const skillCount = Object.keys(skillLevels).length
 
-  const [rewards] = useState(() => calcRewards({ level, hp, skillCount }))
+  const [rewards] = useState(() => calcRewards({ level, timeLeft, skillCount }))
   const [rewarded, setRewarded] = useState(false)
 
   // 发放奖励（只执行一次）
@@ -152,7 +146,7 @@ export default function StageClearScreen({ onExit }) {
         <div style={{ display: 'flex', justifyContent: 'space-around' }}>
           <StatItem label="最终等级" value={`Lv.${level}`} />
           <StatItem label="技能种类" value={`${skillCount} 种`} />
-          <StatItem label="剩余HP" value={`${Math.max(0, hp)}`} />
+          <StatItem label="剩余时间" value={`${timeLeft}s`} />
         </div>
       </div>
 
