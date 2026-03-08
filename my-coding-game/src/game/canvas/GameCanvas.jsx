@@ -104,11 +104,24 @@ const SKILL_POOL_MAP = {
   '乐':         { upgradeId: 'arts_music' },
 }
 
+/* ================================================================
+ * 技能基础功能说明（首次获取时显示）
+ * ================================================================ */
+const SKILL_BASE_DESCRIPTIONS = {
+  '笔记本电脑': '【主动技能】释放时向前方打出1排3个高伤害弹幕，基础伤害倍率250%，CD 2秒',
+  '外卖':       '【主动技能】持续5秒，在普攻两侧额外发射弹幕（每侧2发），每秒4次，CD 10秒',
+  '摸鱼宝典':   '【主动技能】释放时向前方横向打出5发弹幕，CD 3秒',
+  '电动车':     '【主动技能】持续3秒，普攻攻击速度提升100%，CD 10秒',
+  'AI工具':     '【主动技能】持续5秒，生成1个AI镜像在主角右侧同步攻击，镜像伤害100%，CD 20秒',
+  '期末周模式': '【主动技能】持续5秒，普攻必定暴击，CD 15秒',
+  '君子六艺':   '【主动技能】持续5秒，随机向场地内发射25个弹幕，每秒5发，CD 10秒',
+}
+
 /* ================= 升级弹窗 ================= */
 const TIER_COLOR = { bronze: '#cd7f32', silver: '#bdc3c7', gold: '#f1c40f' }
 const TIER_LABEL = { bronze: '铜', silver: '银', gold: '金' }
 
-function LevelUpModal({ choices, onPick }) {
+function LevelUpModal({ choices, onPick, ownedSkills }) {
   if (!choices || choices.length === 0) return null
   return (
     <div style={{
@@ -123,6 +136,7 @@ function LevelUpModal({ choices, onPick }) {
       </div>
       {choices.map((skill, i) => {
         const color = TIER_COLOR[skill.tier] || '#aaa'
+        const isFirstTime = !ownedSkills[skill.category] || ownedSkills[skill.category] === 0
         return (
           <div
             key={i}
@@ -139,6 +153,23 @@ function LevelUpModal({ choices, onPick }) {
               {TIER_LABEL[skill.tier] || skill.tier} · {skill.category}
             </div>
             <div style={{ fontSize: 16, fontWeight: 'bold' }}>{skill.id}</div>
+
+            {/* 首次获取：显示技能基础功能说明 */}
+            {isFirstTime && SKILL_BASE_DESCRIPTIONS[skill.category] && (
+              <div style={{
+                fontSize: 11,
+                color: '#7ef',
+                marginTop: 5,
+                padding: '5px 8px',
+                background: 'rgba(0,100,160,0.25)',
+                borderRadius: 5,
+                borderLeft: '2px solid #4af'
+              }}>
+                🆕 {SKILL_BASE_DESCRIPTIONS[skill.category]}
+              </div>
+            )}
+
+            {/* 强化效果描述 */}
             <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
               {skill.desc || describeSkill(skill)}
             </div>
@@ -166,6 +197,9 @@ function describeSkill(skill) {
   if (skill.permanent)      parts.push('永久生效')
   if (skill.forceCrit)      parts.push('必定暴击')
   if (skill.converge)       parts.push('弹幕向中心收束')
+  if (skill.mirrorDmgUp)    parts.push(`镜像伤害 +${pct(skill.mirrorDmgUp)}`)
+  if (skill.mirrorDmgDown)  parts.push(`镜像伤害 -${pct(skill.mirrorDmgDown)}`)
+  if (skill.mirrorDmgBuff)  parts.push(`每镜像增伤 +${pct(skill.mirrorDmgBuff)}`)
   return parts.length > 0 ? parts.join(' / ') : '特殊效果'
 }
 function pct(v) { return `${(v * 100).toFixed(0)}%` }
@@ -200,9 +234,11 @@ export default function GameCanvas({ joystickMoveRef }) {
   const gainExp            = useGameStore(s => s.gainExp)
   const isLevelUp          = useGameStore(s => s.isLevelUp)
   const levelUpChoices     = useGameStore(s => s.levelUpChoices)
+  const skillLevels        = useGameStore(s => s.skillLevels)
   const pickSkill          = useGameStore(s => s.pickSkill)
   const triggerSkillCooldown = useGameStore(s => s.triggerSkillCooldown)
   const tickSkillCooldowns   = useGameStore(s => s.tickSkillCooldowns)
+  const setStageClear        = useGameStore(s => s.setStageClear)
 
   // 同步 pauseRef
   useEffect(() => { pauseRef.current = pauseGame }, [pauseGame])
@@ -222,8 +258,6 @@ export default function GameCanvas({ joystickMoveRef }) {
 
   /* ================================================================
    * 将 skillPool 选项注册到 CombatManager
-   * 1. 通过 category 映射到 skillId，调用 addSkill（首次注册主技能）
-   * 2. 通过 skill.id 映射到 upgradeId，调用 addUpgrade（应用强化）
    * ================================================================ */
   function registerSkillToCombatManager(poolSkill) {
     const cm = combatManagerRef.current
@@ -235,10 +269,8 @@ export default function GameCanvas({ joystickMoveRef }) {
       return
     }
 
-    // 注册主技能（首次注册 or 升级等级）
     cm.addSkill(skillId)
 
-    // 应用强化
     const mapping = SKILL_POOL_MAP[poolSkill.id]
     if (mapping?.upgradeId) {
       const ok = cm.addUpgrade(skillId, mapping.upgradeId)
@@ -257,7 +289,6 @@ export default function GameCanvas({ joystickMoveRef }) {
 
     const cm = new CombatManager()
 
-    // 注入 CD 回调：CombatManager 触发技能时同步更新 store 的 skillCooldowns
     cm.onSkillTriggered = (skillId) => {
       const category = Object.entries(CATEGORY_TO_SKILL_ID)
         .find(([, sid]) => sid === skillId)?.[0]
@@ -277,11 +308,11 @@ export default function GameCanvas({ joystickMoveRef }) {
         // 清除旧分身，重新生成
         mirrorsRef.current.length = 0
         for (let i = 0; i < count; i++) {
-          const side = i % 2 === 0 ? 1 : -1
-          const dist = Math.ceil((i + 1) / 2) * 50  // 分身展开间距 50px
+          // ★ 所有镜像显示在主角右侧，间距 50px
+          const dist = (i + 1) * 50
           mirrorsRef.current.push({
-            offsetX: side * dist,  // 相对玩家的偏移
-            x: player.x + side * dist,
+            offsetX: dist,           // 正值 = 右侧
+            x: player.x + dist,
             alive: true,
             life: duration,
             maxLife: duration,
@@ -331,6 +362,13 @@ export default function GameCanvas({ joystickMoveRef }) {
     const enemies = enemiesRef.current
     const cm = combatManagerRef.current
 
+    // 检测通关
+    const waveState = waveControllerRef.current?.getState()
+    if (waveState === 'STAGE_CLEAR') {
+      setStageClear(true)
+      return
+    }
+
     waveControllerRef.current?.update(dt)
 
     /* 分身更新：跟随玩家、倒计时、到期清除 */
@@ -338,7 +376,7 @@ export default function GameCanvas({ joystickMoveRef }) {
     for (let i = mirrors.length - 1; i >= 0; i--) {
       const m = mirrors[i]
       m.life -= dt
-      m.x = player.x + m.offsetX  // 实时跟随玩家
+      m.x = player.x + m.offsetX  // 实时跟随玩家（始终在右侧）
       if (m.life <= 0) mirrors.splice(i, 1)
     }
 
@@ -390,8 +428,8 @@ export default function GameCanvas({ joystickMoveRef }) {
             value: Math.round(dmg),
             isCrit,
             alpha: 1.0,
-            vy: -60,   // 每秒上浮 60px
-            life: 1.2  // 存活 1.2 秒
+            vy: -60,
+            life: 1.2
           })
           if (e.hp <= 0) { e.alive = false; gainExp(20) }
         }
@@ -464,7 +502,7 @@ export default function GameCanvas({ joystickMoveRef }) {
       ctx.fill()
     })
 
-    /* AI工具分身 */
+    /* AI工具分身（显示在主角右侧） */
     mirrorsRef.current.forEach(m => renderMirror(ctx, m, camX))
 
     /* 玩家 */
@@ -473,7 +511,7 @@ export default function GameCanvas({ joystickMoveRef }) {
     /* 伤害数字 */
     renderDamageNumbers(ctx, dmgNumsRef.current, camX)
 
-    /* HUD */
+    /* HUD（仅HP，等级/经验值已移至React层） */
     renderHUD(ctx)
   }
 
@@ -515,7 +553,6 @@ export default function GameCanvas({ joystickMoveRef }) {
       ctx.save()
       ctx.globalAlpha = n.alpha
       if (n.isCrit) {
-        // 暴击：金色加粗加大
         ctx.font = 'bold 18px Arial'
         ctx.fillStyle = '#FFD700'
         ctx.strokeStyle = '#7a4000'
@@ -523,7 +560,6 @@ export default function GameCanvas({ joystickMoveRef }) {
         ctx.strokeText(`${n.value}!`, sx - 10, n.y)
         ctx.fillText(`${n.value}!`, sx - 10, n.y)
       } else {
-        // 普通伤害：白色
         ctx.font = 'bold 14px Arial'
         ctx.fillStyle = '#ffffff'
         ctx.strokeStyle = '#000000'
@@ -578,18 +614,10 @@ export default function GameCanvas({ joystickMoveRef }) {
   }
 
   function renderHUD(ctx) {
-    const { exp, expMax, level } = useGameStore.getState()
+    // 仅渲染 HP（等级/经验值已移至 React 层的 LevelExpHUD 组件）
     ctx.font = 'bold 14px Arial'
     ctx.fillStyle = '#fff'
     ctx.fillText(`HP: ${hpRef.current}`, 10, 22)
-    ctx.fillText(`Lv.${level}`, 10, 40)
-    ctx.fillStyle = '#333'
-    ctx.fillRect(10, 46, 130, 7)
-    ctx.fillStyle = '#4af'
-    ctx.fillRect(10, 46, 130 * Math.min(1, exp / expMax), 7)
-    ctx.strokeStyle = '#555'
-    ctx.lineWidth = 1
-    ctx.strokeRect(10, 46, 130, 7)
   }
 
   /* ---- 操控 ---- */
@@ -629,7 +657,11 @@ export default function GameCanvas({ joystickMoveRef }) {
         style={{ width: '100%', height: '100%', display: 'block' }}
       />
       {showModal && (
-        <LevelUpModal choices={levelUpChoices} onPick={handlePickSkill} />
+        <LevelUpModal
+          choices={levelUpChoices}
+          onPick={handlePickSkill}
+          ownedSkills={skillLevels}
+        />
       )}
     </div>
   )

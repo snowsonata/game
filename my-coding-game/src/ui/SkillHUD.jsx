@@ -1,9 +1,8 @@
 // src/ui/SkillHUD.jsx
-// 战斗右上角技能状态面板
+// 战斗左侧技能状态面板（竖排，避免与右上角暂停按钮和左上角等级/经验值重叠）
 // 显示：已获得的技能大类、等级、冷却进度
 
 import { useGameStore } from '../store/gameStore'
-import { SKILL_POOL } from '../game/skill/skillPool'
 
 /* ================= 稀有度颜色 ================= */
 const TIER_COLOR = {
@@ -38,13 +37,14 @@ function SkillSlot({ category, level, cd, maxCd }) {
         height: 40,
         borderRadius: 6,
         border: `2px solid ${color}`,
-        background: '#111',
+        background: 'rgba(10,10,20,0.85)',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: isReady ? 1 : 0.65
+        opacity: isReady ? 1 : 0.65,
+        backdropFilter: 'blur(2px)'
       }}
     >
       {/* 冷却遮罩（从下往上消退） */}
@@ -136,8 +136,9 @@ export default function SkillHUD() {
     <div
       style={{
         position: 'absolute',
-        top: 8,
-        right: 8,  // 暂停按钮在 right:52，不重叠
+        // 左侧中部：top 从 80px 开始，避开左上角的等级/经验值 HUD（约占 60px）
+        top: 80,
+        left: 8,
         display: 'flex',
         flexDirection: 'column',
         gap: 4,

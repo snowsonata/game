@@ -4,14 +4,12 @@ import { SKILL_POOL } from '../game/skill/skillPool'
 
 /* ================= 经验曲线 ================= */
 
-// 你以后想换"波动式""阶段式"，只改这里
 function calcExpMax(level) {
   return Math.floor(10 + level * level * 1.5)
 }
 
 /* ================= 技能基础 CD 查表 ================= */
 
-// 从 SKILL_POOL 中读取每个技能大类的基础 CD
 function getBaseCD(category) {
   const data = SKILL_POOL[category]
   if (!data || data.base == null) return 0
@@ -24,17 +22,26 @@ export const useGameStore = create((set, get) => ({
   level: 1,
   exp: 0,
   expMax: calcExpMax(1),
+  hp: 10,
 
   isLevelUp: false,
   pauseGame: false,
 
+  /* ================= 通关状态 ================= */
+  stageClear: false,
+
+  /* ================= 双货币系统 ================= */
+  // 量子（Quantum）：稀有货币，用于解锁高级内容
+  quantum: 0,
+  // 金币（Gold）：通用货币，用于强化与购买
+  gold: 0,
 
   /* ================= 战斗数值 ================= */
   combatStats: {
-    attack: 0,             // 额外攻击力
-    damageMultiplier: 1,   // 伤害倍率
-    critRate: 0.05,        // 暴击率
-    critDamage: 1.5        // 暴击伤害倍率
+    attack: 0,
+    damageMultiplier: 1,
+    critRate: 0.05,
+    critDamage: 1.5
   },
 
   /* ================= 技能系统 ================= */
@@ -44,7 +51,6 @@ export const useGameStore = create((set, get) => ({
   levelUpChoices: [],
 
   /* ================= 技能冷却（供 UI 读取） ================= */
-  // 格式：{ [category]: { cd: number, maxCd: number } }
   skillCooldowns: {},
 
   /* ================== 经验获取 ================== */
@@ -99,7 +105,6 @@ export const useGameStore = create((set, get) => ({
 
         skillEffects: [...state.skillEffects, skill],
 
-        // 初始化该技能冷却（刚获得时 cd = 0，即可立即使用）
         skillCooldowns: {
           ...state.skillCooldowns,
           [category]: {
@@ -115,7 +120,7 @@ export const useGameStore = create((set, get) => ({
     })
   },
 
-  /* ================== 更新技能冷却（由游戏主循环每帧调用） ================== */
+  /* ================== 更新技能冷却 ================== */
 
   tickSkillCooldowns(dt) {
     const { skillCooldowns } = get()
@@ -137,17 +142,15 @@ export const useGameStore = create((set, get) => ({
     }
   },
 
-  /* ================== 触发技能冷却（技能释放时调用） ================== */
-
   /* ================== 手动暂停/恢复 ================== */
   setPause(value) {
     set({ pauseGame: value })
   },
 
+  /* ================== 触发技能冷却 ================== */
   triggerSkillCooldown(category, actualCd) {
     const { skillCooldowns } = get()
     const state = skillCooldowns[category]
-    // 若传入了实际 CD 则更新 maxCd，否则使用已存的 maxCd
     const maxCd = actualCd ?? state?.maxCd ?? 0
     set({
       skillCooldowns: {
@@ -155,5 +158,40 @@ export const useGameStore = create((set, get) => ({
         [category]: { cd: maxCd, maxCd }
       }
     })
+  },
+
+  /* ================== 通关状态 ================== */
+  setStageClear(value) {
+    set({ stageClear: value })
+    if (value) {
+      set({ pauseGame: true })
+    }
+  },
+
+  /* ================== 货币系统 ================== */
+
+  /**
+   * 增加货币
+   * @param {{ quantum?: number, gold?: number }} amounts
+   */
+  addCurrency({ quantum = 0, gold = 0 }) {
+    set(state => ({
+      quantum: state.quantum + quantum,
+      gold: state.gold + gold
+    }))
+  },
+
+  /**
+   * 消耗货币（返回是否成功）
+   * @param {{ quantum?: number, gold?: number }} amounts
+   */
+  spendCurrency({ quantum = 0, gold = 0 }) {
+    const state = get()
+    if (state.quantum < quantum || state.gold < gold) return false
+    set({
+      quantum: state.quantum - quantum,
+      gold: state.gold - gold
+    })
+    return true
   }
 }))
