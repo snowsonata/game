@@ -745,16 +745,27 @@ export default function GameCanvas({ joystickMoveRef }) {
       }
     }
 
+    // 记录最近一次触摸事件的时间，用于过滤触摸设备上模拟的 mousemove
+    let lastTouchTime = 0
+
+    function onTouchStartCapture() {
+      lastTouchTime = Date.now()
+    }
+
     function onMouseMove(e) {
-      // 暂停时也允许鼠标移动主角
+      // ★ 核心修复：若最近 600ms 内有触摸事件，说明是触摸设备模拟的鼠标事件，直接忽略
+      if (Date.now() - lastTouchTime < 600) return
       const rect = canvas.getBoundingClientRect()
       const scaleX = VIEW_W / rect.width
       const viewX = (e.clientX - rect.left) * scaleX
       player.x = Math.max(20, Math.min(WORLD_W - 20, cameraXRef.current + viewX))
     }
 
+    // 用 capture 阶段监听 touchstart，确保在 mousemove 之前记录时间
+    document.addEventListener('touchstart', onTouchStartCapture, { passive: true, capture: true })
     canvas.addEventListener('mousemove', onMouseMove)
     return () => {
+      document.removeEventListener('touchstart', onTouchStartCapture, { capture: true })
       canvas.removeEventListener('mousemove', onMouseMove)
       if (joystickMoveRef) joystickMoveRef.current = null
     }
