@@ -11,6 +11,10 @@ export default function Home() {
         开始第一关
       </button>
 
+      <button onClick={() => nav('/login')}>
+        登录/注册
+      </button>
+
       <button disabled>第二关（未解锁）</button>
       <button disabled>第三关（未解锁）</button>
     </div>

@@ -1,0 +1,40 @@
+.loading-page{
+
+    width: 100%;
+    height: 100%;
+    background-color: #ffffff;
+    z-index: 10;
+}
+.loading-text{
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+    color: #333333;
+    font-family: "SimSun", "宋体", serif;
+}
+
+.Picture {
+    width: 100px;
+    height: 100px;
+    background-image: url("pictures/Frame 2.svg");
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    z-index: 20;
+    transform: scale(3);
+    position: absolute;
+    top: 80%;
+    left: 0;
+    animation: slideRight 2s linear forwards;
+}
+
+@keyframes slideRight {
+    from {
+        left: 100%;
+    }
+    to {
+        left: calc(100% - 650px);  /* 减去图片宽度，确保图片完全移出屏幕 */
+    }
+}
