@@ -112,7 +112,7 @@ function TimerHUD() {
 /* ================================================================
  * 主组件
  * ================================================================ */
-export default function Game() {
+export default function Game({ onBack }) {
   const navigate = useNavigate()
   const joystickMoveRef = useRef(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -162,7 +162,11 @@ export default function Game() {
     setGameOverStore(false)
     setStageClear(false)
     setGameOver(false)
-    navigate('/')
+    if (onBack) {
+      onBack();
+    } else {
+      navigate('/')
+    }
   }
 
   const handleJoystickMove = useCallback((dx) => {
