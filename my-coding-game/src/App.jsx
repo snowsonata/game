@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import FlipCard from './Card.jsx'
 import ShowItems from './ShowItems.jsx';
-import { Select } from '@mui/material';
 import LoginPage from './LoginPage.jsx';
 import RegisterPage from './RegisterPage_new.jsx';
 import FrontAbilityPage from './FrontAbilityPage.jsx';
@@ -153,7 +152,7 @@ function App() {
                   top: 0, left: 0, right: 0, height: "150px",
                   backgroundColor: "rgba(255,255,255,0.8)", padding: "20px"
               }}>
-                  <div className='HeadImage'>{HeadImage}</div>
+                  <div className='HeadImage' style={{ backgroundImage: `url(${HeadImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }}></div>
                   <div style={{position:"absolute",top:"65px",left:"120px"}}>{Name}</div>
                   <div style={{color:"white",position:"absolute",top:"60px",right:"20px"}}>强化货币：{StrengthCoin}</div>
                   <div style={{color:"white",position:"absolute",top:"100px",right:"20px"}}>抽卡货币：{SelectCoin}</div>
