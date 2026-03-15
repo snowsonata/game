@@ -20,7 +20,7 @@
     position: absolute;
     width: 100%;
     height: 100%;
-    background-image: url("pictures/登录注册图.png");
+    background-image: url("/pictures/登录注册图.png");
     background-size: 100% 100%;
     background-position: center;
     
@@ -120,7 +120,7 @@
 .Locked{
     width: 20px;
     height: 20px;
-    background-image: url("pictures/游戏ui/关卡界面/未解锁.png");
+    background-image: url("/pictures/游戏ui/关卡界面/未解锁.png");
     position: relative;
     bottom: 0px;
     right: 0px;
@@ -130,7 +130,7 @@
 .Complecated{
     width: 20px;
     height: 20px;
-    background-image: url("pictures/游戏ui/关卡界面/已完成.png");
+    background-image: url("/pictures/游戏ui/关卡界面/已完成.png");
     position: relative;
     bottom: 0px;
     right: 0px;
@@ -141,7 +141,7 @@
 .strength{
     width:25px;
     height:20px;
-    background-image: url("pictures/游戏ui/顶部导航栏/钞票.png");
+    background-image: url("/pictures/游戏ui/顶部导航栏/钞票.png");
     position: relative;
     bottom: 20px;
     right: 40px;
@@ -151,7 +151,7 @@
 .select{
     width:25px;
     height:20px;
-    background-image: url("pictures/游戏ui/顶部导航栏/金币.png");
+    background-image: url("/pictures/游戏ui/顶部导航栏/金币.png");
     position: relative;
     bottom: 20px;
     right: 40px;
@@ -162,7 +162,7 @@
 .Stars{
     width:20px;
     height:20px;
-    background-image: url("pictures/游戏ui/关卡界面/难度（实星）.png");
+    background-image: url("/pictures/游戏ui/关卡界面/难度（实星）.png");
     position: relative;
     bottom: 0px;
     right: 0px;
@@ -172,7 +172,7 @@
 .EmptyStars{
     width:20px;
     height:20px;
-    background-image: url("pictures/游戏ui/关卡界面/难度（虚星）.png");
+    background-image: url("/pictures/游戏ui/关卡界面/难度（虚星）.png");
     position: relative;
     bottom: 0px;
     right: 0px;
@@ -197,7 +197,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background-image: url("pictures/游戏ui/顶部导航栏/设置.png");
+    background-image: url("/pictures/游戏ui/顶部导航栏/设置.png");
 }
 .Achievement{
     position: absolute;
@@ -217,7 +217,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    background-image: url("pictures/游戏ui/顶部导航栏/成就.png");
+    background-image: url("/pictures/游戏ui/顶部导航栏/成就.png");
 }
 
 
@@ -633,3 +633,55 @@
         left: 0px;
     }}
 
+
+/* 底部导航栏容器样式 */
+.bottom-nav {
+  position: absolute;
+  bottom: 0px;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background-color: rgba(255,255,255,0.6);
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  z-index: 10;
+}
+
+/* 覆盖原有 Leaderboard 样式以适配底部导航栏 */
+.bottom-nav .Leaderboard {
+    position: relative;
+    top: 0;
+    width: 70px;
+    height: 70px;
+    background-color: rgb(93, 177, 245);
+    color: white;
+    font-size: 18px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: 0.3s;
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.bottom-nav .Leaderboard:hover {
+    background-color: rgb(36, 156, 255);
+}
+
+/* 开始按钮样式修正 */
+.StartGame {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    width: 120px;
+    height: 50px;
+    background: url("/pictures/游戏ui/关卡界面/开始冒险.png") no-repeat center;
+    background-size: contain;
+    cursor: pointer;
+    border: none;
+    border-radius: 0;
+}
+.StartGame::before {
+    display: none;
+}
